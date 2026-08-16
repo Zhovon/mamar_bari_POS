@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #F3F4F6; /* gray-100 */
+  --color-surface: #FFFFFF; /* white */
+  --color-primary: #2563EB; /* blue-600 */
+  --color-secondary: #4B5563; /* gray-600 */
+  --color-accent: #059669; /* emerald-600 */
+}
+
+@layer base {
+  body {
+    @apply bg-background text-gray-900 antialiased;
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  /* Clean Flat Card */
+  .glass-panel {
+    @apply bg-surface border border-gray-200 rounded-lg shadow-sm;
+  }
+  
+  /* Primary Button */
+  .btn-primary {
+    @apply bg-primary hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors shadow-sm;
+  }
+
+  /* Secondary Button */
+  .btn-secondary {
+    @apply bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 font-medium py-2 px-4 rounded-md transition-colors shadow-sm;
+  }
+}
+
+@media print {
+  @page {
+    margin: 0;
+    size: 80mm auto;
+  }
+  body {
+    margin: 0;
+    padding: 0;
+    background: white;
+    color: black;
+    min-height: auto;
+  }
+}

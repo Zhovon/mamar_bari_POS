@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: zhovon
+      POSTGRES_PASSWORD: "28796"
+      POSTGRES_DB: mamrbari
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Automatically run the schema on startup
+      - ./backend/schema.sql:/docker-entrypoint-initdb.d/init.sql
+
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "4000:4000"
+    environment:
+      - DATABASE_URL=postgresql://zhovon:28796@db:5432/mamrbari
+      - PORT=4000
+    depends_on:
+      - db
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:4000
+    # Run dev server with host flag to allow access outside container
+    command: npm run dev -- --host
+
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - 8080:8080
+
+volumes:
+  pgdata:
