@@ -20,10 +20,32 @@ export default function Manager() {
   const [receiptData, setReceiptData] = useState(null);
   const [pendingOrders, setPendingOrders] = useState([]);
   const [qrCodes, setQrCodes] = useState({}); // table_id -> { dataUrl, url, table_number }
+  const [ingredients, setIngredients] = useState([]);
+  
+  // Inventory form state
+  const [editingIngredient, setEditingIngredient] = useState(null);
+  const [inventoryForm, setInventoryForm] = useState({ name: '', unit: 'g', current_stock: '', alert_threshold: '' });
+  
+  // Recipe form state (Modal)
+  const [showRecipeModal, setShowRecipeModal] = useState(false);
+  const [activeRecipeMenuItem, setActiveRecipeMenuItem] = useState(null);
+  const [activeRecipes, setActiveRecipes] = useState([]);
+  const [recipeForm, setRecipeForm] = useState({ ingredient_id: '', quantity_required: '' });
+  
+  // Payment state (Modal)
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [activePaymentOrder, setActivePaymentOrder] = useState(null);
+  const [payments, setPayments] = useState([]);
+  const [paymentForm, setPaymentForm] = useState({ amount: '', payment_method: 'Cash' });
   
   // Menu form state
   const [editingItem, setEditingItem] = useState(null);
   const [menuForm, setMenuForm] = useState({ name: '', category: 'Grill', price: '', image_url: '', is_available: true });
+
+  // Add table state
+  const [showAddTable, setShowAddTable] = useState(false);
+  const [newTableNum, setNewTableNum] = useState('');
+  const [newTableCap, setNewTableCap] = useState(4);
 
   const navigate = useNavigate();
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
@@ -32,6 +54,7 @@ export default function Manager() {
     fetchDashboard();
     fetchMenu();
     fetchPending();
+    fetchIngredients();
 
     const socket = io(API_URL);
     const refreshAll = () => { fetchDashboard(); fetchPending(); };
@@ -114,6 +137,15 @@ export default function Manager() {
     }
   };
 
+  const fetchIngredients = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/inventory`);
+      setIngredients(response.data);
+    } catch (error) {
+      console.error('Error fetching inventory:', error);
+    }
+  };
+
   const handleCheckout = async (orderId, tableId) => {
     try {
       const receiptRes = await axios.get(`${API_URL}/api/orders/${orderId}/receipt`);
@@ -125,6 +157,7 @@ export default function Manager() {
           await axios.put(`${API_URL}/api/orders/${orderId}/status`, { status: 'Completed' });
           alert(`Table checked out successfully!`);
           setReceiptData(null); 
+          setShowPaymentModal(false);
           fetchDashboard();
         } catch (err) {
           console.error('Error completing order after print:', err);
@@ -133,6 +166,38 @@ export default function Manager() {
     } catch (error) {
       console.error('Error generating receipt:', error);
       alert('Failed to fetch receipt data.');
+    }
+  };
+
+  const openPaymentModal = async (table) => {
+    setActivePaymentOrder(table);
+    setShowPaymentModal(true);
+    fetchPayments(table.order_id);
+  };
+
+  const fetchPayments = async (orderId) => {
+    try {
+      const res = await axios.get(`${API_URL}/api/orders/${orderId}/payments`);
+      setPayments(res.data);
+    } catch (error) {
+      console.error('Error fetching payments:', error);
+    }
+  };
+
+  const handleAddPayment = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await axios.post(`${API_URL}/api/orders/${activePaymentOrder.order_id}/payments`, paymentForm);
+      setPaymentForm({ amount: '', payment_method: 'Cash' });
+      fetchPayments(activePaymentOrder.order_id);
+      
+      // Update local dashboard state if fully paid
+      if (res.data.isFullyPaid) {
+        fetchDashboard(); // This will refresh the table status
+      }
+    } catch (error) {
+      console.error('Error adding payment:', error);
+      alert('Failed to add payment');
     }
   };
 
@@ -160,6 +225,85 @@ export default function Manager() {
       fetchMenu();
     } catch (error) {
       console.error('Error deleting menu item:', error);
+    }
+  };
+
+  // Inventory Management Logic
+  const handleSaveInventory = async (e) => {
+    e.preventDefault();
+    try {
+      if (editingIngredient) {
+        await axios.put(`${API_URL}/api/inventory/${editingIngredient.id}`, inventoryForm);
+      } else {
+        await axios.post(`${API_URL}/api/inventory`, inventoryForm);
+      }
+      setEditingIngredient(null);
+      setInventoryForm({ name: '', unit: 'g', current_stock: '', alert_threshold: '' });
+      fetchIngredients();
+    } catch (error) {
+      console.error('Error saving ingredient:', error);
+    }
+  };
+
+  const handleDeleteInventory = async (id) => {
+    if(!window.confirm("Delete this ingredient?")) return;
+    try {
+      await axios.delete(`${API_URL}/api/inventory/${id}`);
+      fetchIngredients();
+    } catch (error) {
+      console.error('Error deleting ingredient:', error);
+    }
+  };
+
+  // Recipe Management Logic
+  const openRecipeModal = async (menuItem) => {
+    setActiveRecipeMenuItem(menuItem);
+    setShowRecipeModal(true);
+    fetchRecipes(menuItem.id);
+  };
+
+  const fetchRecipes = async (menuItemId) => {
+    try {
+      const res = await axios.get(`${API_URL}/api/menu/${menuItemId}/recipes`);
+      setActiveRecipes(res.data);
+    } catch (error) {
+      console.error('Error fetching recipes:', error);
+    }
+  };
+
+  const handleAddRecipe = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post(`${API_URL}/api/menu/${activeRecipeMenuItem.id}/recipes`, recipeForm);
+      setRecipeForm({ ingredient_id: '', quantity_required: '' });
+      fetchRecipes(activeRecipeMenuItem.id);
+    } catch (error) {
+      console.error('Error adding recipe:', error);
+    }
+  };
+
+  const handleDeleteRecipe = async (id) => {
+    try {
+      await axios.delete(`${API_URL}/api/recipes/${id}`);
+      fetchRecipes(activeRecipeMenuItem.id);
+    } catch (error) {
+      console.error('Error deleting recipe:', error);
+    }
+  };
+
+  const handleAddTable = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post(`${API_URL}/api/tables`, {
+        table_number: parseInt(newTableNum),
+        capacity: parseInt(newTableCap)
+      });
+      setShowAddTable(false);
+      setNewTableNum('');
+      setNewTableCap(4);
+      fetchDashboard();
+    } catch (error) {
+      alert(`Failed to add table: ${error.response?.data?.error || error.message}`);
     }
   };
 
@@ -202,41 +346,53 @@ export default function Manager() {
           
           {/* TAB: TABLES */}
           {activeTab === 'tables' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {tables.map((table) => (
-                <div key={table.table_id} className={`bg-white rounded-lg border shadow-sm flex flex-col overflow-hidden ${table.order_id ? 'border-t-4 border-t-blue-500 border-gray-200' : 'border-t-4 border-t-gray-300 border-gray-200'}`}>
-                  <div className="p-5 flex-1">
-                    <div className="flex justify-between items-start mb-4">
-                      <h2 className="text-xl font-bold text-gray-900">Table {table.table_number}</h2>
-                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${table.order_id ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
-                        {table.order_id ? 'Occupied' : 'Available'}
-                      </span>
-                    </div>
-                    
-                    <div className="min-h-[100px] flex flex-col justify-center items-center bg-gray-50 border border-gray-100 rounded-md mb-2 p-4">
-                      {table.order_id ? (
-                        <>
-                          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Current Bill</div>
-                          <div className="text-3xl font-bold text-gray-900 tracking-tight">৳{parseFloat(table.total).toFixed(2)}</div>
-                          <div className="text-xs font-medium text-blue-600 mt-2 bg-blue-50 px-2 py-1 rounded">Status: {table.order_status}</div>
-                        </>
-                      ) : (
-                        <div className="text-gray-400 text-sm font-medium">No active orders</div>
-                      )}
-                    </div>
-                  </div>
+            <div>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-gray-900">Floor Plan</h2>
+                <button 
+                  onClick={() => setShowAddTable(true)}
+                  className="bg-blue-600 text-white font-medium px-4 py-2 rounded-md hover:bg-blue-700 shadow-sm"
+                >
+                  + Add Table
+                </button>
+              </div>
 
-                  <div className="px-5 pb-5">
-                    <button 
-                      onClick={() => handleCheckout(table.order_id, table.table_id)}
-                      disabled={!table.order_id}
-                      className={`w-full py-2.5 rounded-md font-medium transition-colors shadow-sm ${table.order_id ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'}`}
-                    >
-                      Print Invoice & Close
-                    </button>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {tables.map((table) => (
+                  <div key={table.table_id} className={`bg-white rounded-lg border shadow-sm flex flex-col overflow-hidden ${table.order_id ? 'border-t-4 border-t-blue-500 border-gray-200' : 'border-t-4 border-t-gray-300 border-gray-200'}`}>
+                    <div className="p-5 flex-1">
+                      <div className="flex justify-between items-start mb-4">
+                        <h2 className="text-xl font-bold text-gray-900">Table {table.table_number}</h2>
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${table.order_id ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
+                          {table.order_id ? 'Occupied' : 'Available'}
+                        </span>
+                      </div>
+                      
+                      <div className="min-h-[100px] flex flex-col justify-center items-center bg-gray-50 border border-gray-100 rounded-md mb-2 p-4">
+                        {table.order_id ? (
+                          <>
+                            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Current Bill</div>
+                            <div className="text-3xl font-bold text-gray-900 tracking-tight">৳{parseFloat(table.total).toFixed(2)}</div>
+                            <div className="text-xs font-medium text-blue-600 mt-2 bg-blue-50 px-2 py-1 rounded">Status: {table.order_status}</div>
+                          </>
+                        ) : (
+                          <div className="text-gray-400 text-sm font-medium">No active orders</div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="px-5 pb-5">
+                      <button 
+                        onClick={() => openPaymentModal(table)}
+                        disabled={!table.order_id}
+                        className={`w-full py-2.5 rounded-md font-medium transition-colors shadow-sm ${table.order_id ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'}`}
+                      >
+                        Process Payment
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           )}
 
@@ -374,6 +530,7 @@ export default function Manager() {
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <button onClick={() => openRecipeModal(item)} className="text-purple-600 hover:text-purple-900 mr-4">Recipe</button>
                           <button onClick={() => { setEditingItem(item); setMenuForm(item); }} className="text-blue-600 hover:text-blue-900 mr-4">Edit</button>
                           <button onClick={() => handleDeleteMenu(item.id)} className="text-red-600 hover:text-red-900">Delete</button>
                         </td>
@@ -387,9 +544,70 @@ export default function Manager() {
 
           {/* TAB: INVENTORY */}
           {activeTab === 'inventory' && (
-            <div className="text-center py-20">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">Inventory Management</h2>
-              <p className="text-gray-500">Coming soon in Phase 6.1</p>
+            <div className="flex gap-8 items-start">
+              {/* Form */}
+              <div className="w-1/3 bg-white p-6 rounded-lg shadow-sm border border-gray-200 sticky top-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-6">{editingIngredient ? 'Edit Ingredient' : 'Add New Ingredient'}</h2>
+                <form onSubmit={handleSaveInventory} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Ingredient Name</label>
+                    <input type="text" required value={inventoryForm.name} onChange={e => setInventoryForm({...inventoryForm, name: e.target.value})} className="w-full border-gray-300 rounded-md shadow-sm p-2 border focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                    <select value={inventoryForm.unit} onChange={e => setInventoryForm({...inventoryForm, unit: e.target.value})} className="w-full border-gray-300 rounded-md shadow-sm p-2 border focus:border-blue-500">
+                      {['g', 'kg', 'ml', 'L', 'pcs'].map(u => <option key={u} value={u}>{u}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Current Stock</label>
+                    <input type="number" step="0.01" required value={inventoryForm.current_stock} onChange={e => setInventoryForm({...inventoryForm, current_stock: e.target.value})} className="w-full border-gray-300 rounded-md shadow-sm p-2 border focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Alert Threshold</label>
+                    <input type="number" step="0.01" required value={inventoryForm.alert_threshold} onChange={e => setInventoryForm({...inventoryForm, alert_threshold: e.target.value})} className="w-full border-gray-300 rounded-md shadow-sm p-2 border focus:border-blue-500" />
+                  </div>
+                  <div className="pt-4 flex gap-3">
+                    <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded-md font-medium hover:bg-blue-700 shadow-sm">{editingIngredient ? 'Save Changes' : 'Add Ingredient'}</button>
+                    {editingIngredient && (
+                      <button type="button" onClick={() => { setEditingIngredient(null); setInventoryForm({ name: '', unit: 'g', current_stock: '', alert_threshold: '' }); }} className="flex-1 bg-white border border-gray-300 text-gray-700 py-2 rounded-md font-medium hover:bg-gray-50 shadow-sm">Cancel</button>
+                    )}
+                  </div>
+                </form>
+              </div>
+
+              {/* Data Table */}
+              <div className="flex-1 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ingredient</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {ingredients.map(ing => (
+                      <tr key={ing.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{ing.name}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{parseFloat(ing.current_stock).toFixed(2)} {ing.unit}</td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {ing.current_stock <= ing.alert_threshold ? (
+                            <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Low Stock</span>
+                          ) : (
+                            <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">OK</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <button onClick={() => { setEditingIngredient(ing); setInventoryForm(ing); }} className="text-blue-600 hover:text-blue-900 mr-4">Edit</button>
+                          <button onClick={() => handleDeleteInventory(ing.id)} className="text-red-600 hover:text-red-900">Delete</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
@@ -460,6 +678,138 @@ export default function Manager() {
           </div>
         </div>
       )}
+      {/* RECIPE MODAL */}
+      {showRecipeModal && activeRecipeMenuItem && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 print:hidden">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+              <h3 className="text-xl font-bold text-gray-900">Recipe: {activeRecipeMenuItem.name}</h3>
+              <button onClick={() => setShowRecipeModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto flex-1">
+              <div className="mb-6 bg-blue-50 text-blue-800 p-4 rounded-md text-sm">
+                Add ingredients here. When a customer orders <strong>{activeRecipeMenuItem.name}</strong>, these ingredients will be automatically deducted from the inventory.
+              </div>
+
+              <h4 className="font-bold text-gray-700 mb-3">Current Ingredients</h4>
+              {activeRecipes.length === 0 ? (
+                <div className="text-gray-500 text-sm mb-6 italic">No ingredients added yet.</div>
+              ) : (
+                <table className="w-full mb-6 border border-gray-200 rounded-md overflow-hidden">
+                  <thead className="bg-gray-100 text-xs uppercase text-gray-600 text-left">
+                    <tr>
+                      <th className="px-4 py-2">Ingredient</th>
+                      <th className="px-4 py-2">Required Qty</th>
+                      <th className="px-4 py-2 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 text-sm">
+                    {activeRecipes.map(recipe => (
+                      <tr key={recipe.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-2 font-medium">{recipe.name}</td>
+                        <td className="px-4 py-2">{parseFloat(recipe.quantity_required).toFixed(2)} {recipe.unit}</td>
+                        <td className="px-4 py-2 text-right">
+                          <button onClick={() => handleDeleteRecipe(recipe.id)} className="text-red-600 hover:text-red-800">Remove</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              <h4 className="font-bold text-gray-700 mb-3">Add Ingredient</h4>
+              <form onSubmit={handleAddRecipe} className="flex gap-4 items-end bg-gray-50 p-4 border border-gray-200 rounded-md">
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Select Ingredient</label>
+                  <select required value={recipeForm.ingredient_id} onChange={e => setRecipeForm({...recipeForm, ingredient_id: e.target.value})} className="w-full border-gray-300 rounded-md shadow-sm p-2 border focus:border-blue-500 text-sm">
+                    <option value="">-- Choose --</option>
+                    {ingredients.map(ing => <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>)}
+                  </select>
+                </div>
+                <div className="w-32">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Quantity</label>
+                  <input type="number" step="0.01" required value={recipeForm.quantity_required} onChange={e => setRecipeForm({...recipeForm, quantity_required: e.target.value})} className="w-full border-gray-300 rounded-md shadow-sm p-2 border focus:border-blue-500 text-sm" placeholder="e.g. 1.5" />
+                </div>
+                <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-md font-medium hover:bg-blue-700 text-sm shadow-sm h-[38px]">Add</button>
+              </form>
+            </div>
+            
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end bg-gray-50">
+              <button onClick={() => setShowRecipeModal(false)} className="px-6 py-2 bg-gray-200 text-gray-800 rounded-md font-medium hover:bg-gray-300">Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PAYMENT MODAL (Split Billing) */}
+      {showPaymentModal && activePaymentOrder && (() => {
+        const orderTotal = parseFloat(activePaymentOrder.total || 0);
+        const totalPaid = payments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+        const remaining = Math.max(0, orderTotal - totalPaid);
+        const isFullyPaid = remaining === 0 || activePaymentOrder.order_status === 'Paid';
+
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 print:hidden">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden flex flex-col">
+              <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+                <h3 className="text-xl font-bold text-gray-900">Payment: Table {activePaymentOrder.table_number}</h3>
+                <button onClick={() => setShowPaymentModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+              </div>
+              
+              <div className="p-6">
+                <div className="flex justify-between items-end mb-6 bg-gray-50 p-4 rounded-md border border-gray-200">
+                  <div>
+                    <p className="text-sm text-gray-500 mb-1">Total Bill</p>
+                    <p className="text-3xl font-bold text-gray-900">৳{orderTotal.toFixed(2)}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-gray-500 mb-1">Remaining</p>
+                    <p className={`text-xl font-bold ${remaining === 0 ? 'text-green-600' : 'text-red-600'}`}>৳{remaining.toFixed(2)}</p>
+                  </div>
+                </div>
+
+                <h4 className="font-bold text-gray-700 mb-2 text-sm uppercase tracking-wider">Payments Made</h4>
+                {payments.length === 0 ? (
+                  <p className="text-gray-500 text-sm mb-6 italic">No payments recorded yet.</p>
+                ) : (
+                  <ul className="mb-6 border border-gray-200 rounded-md divide-y divide-gray-100 max-h-40 overflow-y-auto">
+                    {payments.map(p => (
+                      <li key={p.id} className="p-3 flex justify-between text-sm">
+                        <span><span className="font-medium">{p.payment_method}</span> <span className="text-gray-400 text-xs ml-2">{new Date(p.created_at).toLocaleTimeString()}</span></span>
+                        <span className="font-medium text-gray-900">৳{parseFloat(p.amount).toFixed(2)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {!isFullyPaid && (
+                  <form onSubmit={handleAddPayment} className="flex gap-3 mb-6">
+                    <div className="flex-1">
+                      <select required value={paymentForm.payment_method} onChange={e => setPaymentForm({...paymentForm, payment_method: e.target.value})} className="w-full border border-gray-300 rounded-md p-2 outline-none focus:border-blue-500 shadow-sm text-sm">
+                        {['Cash', 'Card', 'bKash', 'Nagad', 'Other'].map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </div>
+                    <div className="w-1/3">
+                      <input type="number" step="0.01" required max={remaining} value={paymentForm.amount} onChange={e => setPaymentForm({...paymentForm, amount: e.target.value})} className="w-full border border-gray-300 rounded-md p-2 outline-none focus:border-blue-500 shadow-sm text-sm" placeholder="Amount" />
+                    </div>
+                    <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 shadow-sm">Add</button>
+                  </form>
+                )}
+              </div>
+              
+              <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex gap-3">
+                <button onClick={() => setShowPaymentModal(false)} className="flex-1 bg-white border border-gray-300 text-gray-700 rounded-md font-medium hover:bg-gray-50 py-2.5">Close</button>
+                {isFullyPaid && (
+                  <button onClick={() => handleCheckout(activePaymentOrder.order_id, activePaymentOrder.table_id)} className="flex-1 bg-green-600 text-white rounded-md font-medium hover:bg-green-700 py-2.5 shadow-sm">
+                    Print Invoice &amp; Close Table
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </>
   );
 }

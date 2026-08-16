@@ -3,7 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const { exec } = require('child_process');
 require('dotenv').config();
 
@@ -126,12 +126,122 @@ app.delete('/api/menu/:id', authenticateToken, requireAdminOrManager, async (req
   }
 });
 
+// ==========================================
+// PHASE 6.1: INVENTORY & RECIPES
+// ==========================================
+
+// Get all ingredients
+app.get('/api/inventory', authenticateToken, requireAdminOrManager, async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT * FROM ingredients ORDER BY name');
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add new ingredient
+app.post('/api/inventory', authenticateToken, requireAdminOrManager, async (req, res) => {
+  const { name, unit, current_stock, alert_threshold } = req.body;
+  try {
+    const { rows } = await db.query(
+      'INSERT INTO ingredients (name, unit, current_stock, alert_threshold) VALUES ($1, $2, $3, $4) RETURNING *',
+      [name, unit, current_stock || 0, alert_threshold || 0]
+    );
+    res.status(201).json(rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update ingredient
+app.put('/api/inventory/:id', authenticateToken, requireAdminOrManager, async (req, res) => {
+  const { id } = req.params;
+  const { name, unit, current_stock, alert_threshold } = req.body;
+  try {
+    const { rows } = await db.query(
+      'UPDATE ingredients SET name=$1, unit=$2, current_stock=$3, alert_threshold=$4 WHERE id=$5 RETURNING *',
+      [name, unit, current_stock, alert_threshold, id]
+    );
+    res.json(rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete ingredient
+app.delete('/api/inventory/:id', authenticateToken, requireAdminOrManager, async (req, res) => {
+  try {
+    await db.query('DELETE FROM ingredients WHERE id=$1', [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get recipes for a menu item
+app.get('/api/menu/:id/recipes', authenticateToken, requireAdminOrManager, async (req, res) => {
+  try {
+    const { rows } = await db.query(`
+      SELECT r.id, r.ingredient_id, r.quantity_required, i.name, i.unit 
+      FROM recipes r
+      JOIN ingredients i ON r.ingredient_id = i.id
+      WHERE r.menu_item_id = $1
+    `, [req.params.id]);
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add recipe mapping
+app.post('/api/menu/:id/recipes', authenticateToken, requireAdminOrManager, async (req, res) => {
+  const { ingredient_id, quantity_required } = req.body;
+  try {
+    const { rows } = await db.query(
+      'INSERT INTO recipes (menu_item_id, ingredient_id, quantity_required) VALUES ($1, $2, $3) RETURNING *',
+      [req.params.id, ingredient_id, quantity_required]
+    );
+    res.status(201).json(rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete recipe mapping
+app.delete('/api/recipes/:id', authenticateToken, requireAdminOrManager, async (req, res) => {
+  try {
+    await db.query('DELETE FROM recipes WHERE id=$1', [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 3. Tables Route (Protected)
 app.get('/api/tables', authenticateToken, async (req, res) => {
   try {
     const { rows } = await db.query('SELECT * FROM restaurant_tables ORDER BY table_number');
     res.json(rows);
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 3a. Add a new table (Admin/Manager only)
+app.post('/api/tables', authenticateToken, requireAdminOrManager, async (req, res) => {
+  const { table_number, capacity } = req.body;
+  if (!table_number) return res.status(400).json({ error: 'Table number is required' });
+  try {
+    const { rows } = await db.query(
+      'INSERT INTO restaurant_tables (table_number, capacity) VALUES ($1, $2) RETURNING *',
+      [table_number, capacity || 4]
+    );
+    res.status(201).json(rows[0]);
+  } catch (error) {
+    if (error.code === '23505') { // unique violation
+      return res.status(400).json({ error: 'Table number already exists' });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -304,20 +414,45 @@ app.get('/api/orders/pending-confirmation', authenticateToken, async (req, res) 
   }
 });
 
+// Helper: Deduct inventory stock for an order
+const deductInventoryForOrder = async (orderId, client) => {
+  const { rows: items } = await client.query('SELECT menu_item_id, quantity FROM order_items WHERE order_id = $1', [orderId]);
+  for (let item of items) {
+    const { rows: recipes } = await client.query('SELECT ingredient_id, quantity_required FROM recipes WHERE menu_item_id = $1', [item.menu_item_id]);
+    for (let recipe of recipes) {
+      const totalRequired = recipe.quantity_required * item.quantity;
+      await client.query('UPDATE ingredients SET current_stock = current_stock - $1 WHERE id = $2', [totalRequired, recipe.ingredient_id]);
+    }
+  }
+};
+
 // P5. Staff: accept a QR order -> enters the kitchen queue.
 app.post('/api/orders/:id/confirm', authenticateToken, async (req, res) => {
   const { id } = req.params;
+  const client = await db.getClient();
   try {
-    const { rows } = await db.query(
+    await client.query('BEGIN');
+    const { rows } = await client.query(
       "UPDATE orders SET status = 'Pending', waiter_id = $1 WHERE id = $2 AND status = 'Unconfirmed' RETURNING *",
       [req.user.id, id]
     );
-    if (rows.length === 0) return res.status(404).json({ error: 'Order not found or already handled' });
-    await db.query("UPDATE restaurant_tables SET status = 'Occupied' WHERE id = $1", [rows[0].table_id]);
+    if (rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Order not found or already handled' });
+    }
+    await client.query("UPDATE restaurant_tables SET status = 'Occupied' WHERE id = $1", [rows[0].table_id]);
+    
+    // Phase 6.1: Deduct inventory
+    await deductInventoryForOrder(id, client);
+    
+    await client.query('COMMIT');
     io.emit('new_order', { orderId: id, tableId: rows[0].table_id });
     res.json({ success: true, order: rows[0] });
   } catch (error) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -357,6 +492,10 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
       );
     }
     await client.query("UPDATE restaurant_tables SET status = 'Occupied' WHERE id = $1", [table_id]);
+    
+    // Phase 6.1: Deduct inventory
+    await deductInventoryForOrder(order.id, client);
+
     await client.query('COMMIT');
     
     io.emit('new_order', { orderId: order.id, tableId: table_id });
@@ -389,6 +528,71 @@ app.put('/api/orders/:id/status', authenticateToken, async (req, res) => {
     }
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ==========================================
+// PHASE 6.2: SPLIT BILLING (PAYMENTS)
+// ==========================================
+
+// Get payments for an order
+app.get('/api/orders/:id/payments', authenticateToken, async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT * FROM payments WHERE order_id = $1 ORDER BY created_at ASC', [req.params.id]);
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add a payment to an order
+app.post('/api/orders/:id/payments', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { amount, payment_method } = req.body;
+  
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    
+    // Insert the payment
+    const { rows: paymentRows } = await client.query(
+      'INSERT INTO payments (order_id, amount, payment_method) VALUES ($1, $2, $3) RETURNING *',
+      [id, amount, payment_method]
+    );
+    
+    // Calculate total paid vs order total
+    const { rows: orderRows } = await client.query('SELECT total, table_id FROM orders WHERE id = $1', [id]);
+    const { rows: sumRows } = await client.query('SELECT SUM(amount) as total_paid FROM payments WHERE order_id = $1', [id]);
+    
+    const totalPaid = parseFloat(sumRows[0].total_paid || 0);
+    const orderTotal = parseFloat(orderRows[0].total || 0);
+    
+    let isFullyPaid = false;
+    if (totalPaid >= orderTotal) {
+      // Auto-update order to Paid if fully covered
+      await client.query("UPDATE orders SET status = 'Paid' WHERE id = $1 AND status != 'Completed'", [id]);
+      isFullyPaid = true;
+    }
+    
+    await client.query('COMMIT');
+    
+    // Notify clients of status change if it became fully paid
+    if (isFullyPaid) {
+      io.emit('order_status_updated', { id, status: 'Paid', table_id: orderRows[0].table_id });
+    }
+    
+    res.status(201).json({
+      success: true,
+      payment: paymentRows[0],
+      totalPaid,
+      orderTotal,
+      isFullyPaid
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
   }
 });
 
