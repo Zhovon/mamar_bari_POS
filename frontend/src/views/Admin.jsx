@@ -5,12 +5,10 @@ import { useNavigate } from 'react-router-dom';
 export default function Admin() {
   const [command, setCommand] = useState('');
   const [logs, setLogs] = useState([{ type: 'system', text: 'Welcome to Mamar Bari Secure Admin Terminal v1.0.0' }]);
-  const [isDbReady, setIsDbReady] = useState(false);
   const bottomRef = useRef(null);
   const navigate = useNavigate();
 
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-  const ADMINER_URL = import.meta.env.VITE_ADMINER_URL || 'http://localhost:8080';
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -91,32 +89,7 @@ export default function Admin() {
           </form>
         </div>
 
-        {/* Database Section */}
-        <div className="w-[500px] flex flex-col bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-          <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
-            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Database Access (Adminer)</h2>
-          </div>
-          <div className="flex-1 relative">
-            {!isDbReady && (
-              <div className="absolute inset-0 flex items-center justify-center bg-white text-gray-500 font-medium z-10">
-                Loading Adminer GUI...
-              </div>
-            )}
-            <iframe 
-              src={ADMINER_URL}
-              className="w-full h-full border-none absolute inset-0"
-              title="Adminer"
-              onLoad={() => setIsDbReady(true)}
-            />
-          </div>
-          <div className="p-4 bg-gray-50 border-t border-gray-200 text-sm text-gray-600 font-medium">
-            <p><strong>System:</strong> PostgreSQL</p>
-            <p><strong>Server:</strong> db</p>
-            <p><strong>Username:</strong> zhovon</p>
-            <p><strong>Password:</strong> 28796</p>
-            <p><strong>Database:</strong> mamrbari</p>
-          </div>
-        </div>
+
       </div>
     </div>
   );
