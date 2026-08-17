@@ -1089,11 +1089,15 @@ app.get('/api/kitchen/queue', authenticateToken, async (req, res) => {
 app.get('/api/waiter/orders', authenticateToken, async (req, res) => {
   try {
     const query = `
-      SELECT o.id as order_id, o.table_id, t.table_number, o.status, o.total, o.created_at
+      SELECT o.id as order_id, o.table_id, t.table_number, o.status, o.total, o.created_at,
+             COALESCE(json_agg(json_build_object('name', m.name, 'quantity', oi.quantity)) FILTER (WHERE m.name IS NOT NULL), '[]') as items
       FROM orders o
       JOIN restaurant_tables t ON o.table_id = t.id
+      LEFT JOIN order_items oi ON o.id = oi.order_id
+      LEFT JOIN menu_items m ON oi.menu_item_id = m.id
       -- 'Served' is included so a waiter can take payment at the table.
       WHERE o.status IN ('Pending', 'Cooking', 'Ready', 'Served')
+      GROUP BY o.id, t.table_number
       ORDER BY o.created_at DESC;
     `;
     const { rows } = await db.query(query);
@@ -1109,7 +1113,13 @@ app.get('/api/manager/dashboard', authenticateToken, async (req, res) => {
     const query = `
       SELECT 
         t.id as table_id, t.table_number, t.status as table_status,
-        o.id as order_id, o.status as order_status, o.total
+        o.id as order_id, o.status as order_status, o.total,
+        (
+           SELECT COALESCE(json_agg(json_build_object('name', m.name, 'quantity', oi.quantity)), '[]')
+           FROM order_items oi
+           JOIN menu_items m ON oi.menu_item_id = m.id
+           WHERE oi.order_id = o.id
+        ) as items
       FROM restaurant_tables t
       LEFT JOIN orders o ON t.id = o.table_id AND o.status IN ('Pending', 'Cooking', 'Ready', 'Served')
       ORDER BY t.table_number;
