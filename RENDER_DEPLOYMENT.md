@@ -38,8 +38,16 @@ The backend runs the API, WebSockets, and Authentication.
 4. **Environment Variables:**
    - Click "Advanced" and add these environment variables:
      - `DATABASE_URL` = *(Paste the Database URL you copied in Step 1)*
-     - `JWT_SECRET` = `mamar_bari_production_key_2026`
+     - `JWT_SECRET` = *(a long random string — the server refuses to boot in production without it)*
+     - `NODE_ENV` = `production`
+     - `FRONTEND_URL` = `https://mamar-bari-pos.vercel.app`
 5. Select **Free Tier** and click **Create Web Service**.
+
+> [!IMPORTANT]
+> `FRONTEND_URL` is the address baked into every **printed table QR code**. If it
+> is missing or wrong, the stickers you print will send customers to the wrong
+> site. Always check the URL shown under the QR in **Manager → Table QR Codes**
+> before printing a batch.
 6. Wait for the deploy to finish. Copy the assigned URL (e.g., `https://mamrbari-api.onrender.com`).
 
 ---

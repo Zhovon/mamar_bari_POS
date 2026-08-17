@@ -29,7 +29,11 @@ export default function Admin() {
       
       setLogs(prev => [...prev, { type: 'output', text: response.data.output || 'Command executed successfully. (No output)' }]);
     } catch (error) {
-      setLogs(prev => [...prev, { type: 'error', text: error.response?.data?.error || error.message }]);
+      // The terminal ships disabled -- say so plainly rather than looking broken.
+      const text = error.response?.data?.code === 'TERMINAL_DISABLED'
+        ? 'The web terminal is switched off on the server.\nTo enable it temporarily, set ENABLE_ADMIN_TERMINAL=true and restart the backend.\nLeave it off in normal operation: it runs any command on the server, guarded only by a 4-digit PIN.'
+        : (error.response?.data?.error || error.message);
+      setLogs(prev => [...prev, { type: 'error', text }]);
     }
     setCommand('');
   };
