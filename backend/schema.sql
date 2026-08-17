@@ -29,8 +29,46 @@ CREATE TABLE IF NOT EXISTS restaurant_tables (
   table_number INT NOT NULL UNIQUE,
   status VARCHAR(20) NOT NULL DEFAULT 'Available' CHECK (status IN ('Available', 'Occupied', 'Billed')),
   capacity INT NOT NULL DEFAULT 4,
-  session_version INT NOT NULL DEFAULT 1
+  session_version INT NOT NULL DEFAULT 1,
+  -- Short, permanent, opaque code encoded in the QR printed for this table.
+  -- Names the table only; it never authorises ordering on its own.
+  qr_code VARCHAR(16) NOT NULL UNIQUE
 );
+
+-- 3a. Dining sessions: ONE shared session per table visit, so everyone at the
+-- table sees a single combined bill.
+CREATE TABLE IF NOT EXISTS table_sessions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  table_id UUID NOT NULL REFERENCES restaurant_tables(id) ON DELETE CASCADE,
+  status VARCHAR(10) NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+  customer_id UUID REFERENCES customers(id) NULL,
+  opened_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  last_activity_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  closed_at TIMESTAMP WITH TIME ZONE,
+  closed_reason VARCHAR(30)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS table_sessions_one_open_per_table
+  ON table_sessions (table_id) WHERE status = 'open';
+
+-- 3b. One row per phone in a session. Splitting devices out from the session is
+-- what lets a single phone be released (on review submit or dismiss) without
+-- ending the visit for everyone else at the table.
+CREATE TABLE IF NOT EXISTS session_devices (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  session_id UUID NOT NULL REFERENCES table_sessions(id) ON DELETE CASCADE,
+  device_id VARCHAR(64) NOT NULL,
+  status VARCHAR(10) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'closed')),
+  guest_name VARCHAR(100),
+  joined_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  closed_at TIMESTAMP WITH TIME ZONE,
+  closed_reason VARCHAR(30) CHECK (closed_reason IN (
+    'review_submitted', 'review_skipped', 'left', 'table_closed'
+  ))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS session_devices_session_device_key
+  ON session_devices (session_id, device_id);
 
 -- 4. Menu Items Table
 CREATE TABLE IF NOT EXISTS menu_items (
@@ -47,6 +85,7 @@ CREATE TABLE IF NOT EXISTS menu_items (
 CREATE TABLE IF NOT EXISTS orders (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   table_id UUID REFERENCES restaurant_tables(id),
+  table_session_id UUID REFERENCES table_sessions(id) NULL, -- NULL for staff-entered orders
   waiter_id UUID REFERENCES users(id),
   customer_id UUID REFERENCES customers(id) NULL,
   status VARCHAR(20) NOT NULL DEFAULT 'Pending' CHECK (status IN ('Unconfirmed', 'Pending', 'Cooking', 'Ready', 'Served', 'Paid', 'Completed', 'Cancelled')),
@@ -96,3 +135,19 @@ CREATE TABLE IF NOT EXISTS payments (
   payment_method VARCHAR(20) NOT NULL CHECK (payment_method IN ('Cash', 'Card', 'bKash', 'Other')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- 10. Reviews Table (captured on the customer's phone once the bill is settled)
+CREATE TABLE IF NOT EXISTS reviews (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  session_id UUID REFERENCES table_sessions(id) ON DELETE SET NULL,
+  device_id VARCHAR(64),
+  table_id UUID REFERENCES restaurant_tables(id),
+  order_id UUID REFERENCES orders(id) ON DELETE SET NULL,
+  customer_id UUID REFERENCES customers(id) NULL,
+  rating INT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  comment TEXT,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS reviews_created_at_idx ON reviews (created_at DESC);
+CREATE INDEX IF NOT EXISTS orders_table_session_id_idx ON orders (table_session_id);

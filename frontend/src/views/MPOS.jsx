@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
+import PaymentModal from '../components/PaymentModal';
 
 export default function MPOS() {
   const [menuItems, setMenuItems] = useState([]);
@@ -11,6 +12,10 @@ export default function MPOS() {
   const [cart, setCart] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showOrdersModal, setShowOrdersModal] = useState(false);
+  // Guests pay at the table as often as at the desk, so the waiter's handheld
+  // gets the same split-billing modal the manager uses.
+  const [payingOrder, setPayingOrder] = useState(null);
+  const [billRequests, setBillRequests] = useState([]);
   const navigate = useNavigate();
 
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
@@ -21,6 +26,10 @@ export default function MPOS() {
     const socket = io(API_URL);
     socket.on('new_order', fetchData);
     socket.on('order_status_updated', fetchData);
+    // A guest tapped "Request bill" on their phone.
+    socket.on('bill_requested', ({ tableNumber }) => {
+      setBillRequests((prev) => (prev.includes(tableNumber) ? prev : [...prev, tableNumber]));
+    });
 
     return () => socket.disconnect();
   }, []);
@@ -107,12 +116,21 @@ export default function MPOS() {
           <div className="flex items-center gap-4">
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Waiter POS</h1>
             
-            <button 
-              onClick={() => setShowOrdersModal(true)} 
+            <button
+              onClick={() => setShowOrdersModal(true)}
               className={`px-4 py-2 rounded-md font-medium transition-colors border ${readyOrdersCount > 0 ? 'bg-yellow-100 text-yellow-800 border-yellow-300' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
             >
               Active Orders ({activeOrders.length})
             </button>
+
+            {billRequests.length > 0 && (
+              <button
+                onClick={() => { setShowOrdersModal(true); setBillRequests([]); }}
+                className="px-4 py-2 rounded-md font-medium border bg-yellow-100 text-yellow-900 border-yellow-300 animate-pulse"
+              >
+                🔔 Bill requested: {billRequests.map((n) => `Table ${n}`).join(', ')}
+              </button>
+            )}
             <button onClick={handleLogout} className="text-sm font-medium text-red-600 hover:text-red-800 px-3 py-2">Logout</button>
           </div>
           
@@ -211,11 +229,13 @@ export default function MPOS() {
                   <div key={order.order_id} className={`p-4 rounded-md flex justify-between items-center border ${order.status === 'Ready' ? 'border-yellow-200 bg-yellow-50' : 'border-gray-200 bg-white'}`}>
                     <div>
                       <div className="text-base font-bold text-gray-900 mb-0.5">Table {order.table_number}</div>
-                      <div className="text-xs text-gray-500">Order #{order.order_id.split('-')[0]}</div>
+                      <div className="text-xs text-gray-500">
+                        Order #{order.order_id.split('-')[0]} · ৳{parseFloat(order.total || 0).toFixed(2)}
+                      </div>
                     </div>
-                    <div>
+                    <div className="flex items-center gap-2">
                       {order.status === 'Ready' ? (
-                        <button 
+                        <button
                           onClick={() => markServed(order.order_id)}
                           className="px-4 py-1.5 rounded-md text-sm font-medium bg-yellow-100 text-yellow-800 border border-yellow-200 hover:bg-yellow-200 transition-colors"
                         >
@@ -229,6 +249,18 @@ export default function MPOS() {
                           {order.status}
                         </span>
                       )}
+                      <button
+                        onClick={() => setPayingOrder({
+                          order_id: order.order_id,
+                          table_id: order.table_id,
+                          table_number: order.table_number,
+                          total: order.total,
+                          order_status: order.status,
+                        })}
+                        className="px-4 py-1.5 rounded-md text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                      >
+                        Take Payment
+                      </button>
                     </div>
                   </div>
                 ))
@@ -240,7 +272,17 @@ export default function MPOS() {
           </div>
         </div>
       )}
-      
+
+      {/* Payment at the table -- same modal and endpoint the desk uses, so
+          settling the bill here also prompts the guest's phone for a review. */}
+      {payingOrder && (
+        <PaymentModal
+          order={payingOrder}
+          onClose={() => setPayingOrder(null)}
+          onPaid={fetchData}
+        />
+      )}
+
     </div>
   );
 }

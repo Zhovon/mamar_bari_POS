@@ -3,12 +3,14 @@ import axios from 'axios';
 import { io } from 'socket.io-client';
 import { useNavigate } from 'react-router-dom';
 import QRCode from 'qrcode';
+import PaymentModal from '../components/PaymentModal';
 
 const TABS = [
   { key: 'tables', label: 'Tables' },
   { key: 'confirm', label: 'QR Orders' },
   { key: 'menu', label: 'Menu' },
   { key: 'codes', label: 'Table QR Codes' },
+  { key: 'reviews', label: 'Reviews' },
   { key: 'inventory', label: 'Inventory' },
   { key: 'analytics', label: 'Analytics' },
 ];
@@ -35,9 +37,14 @@ export default function Manager() {
   // Payment state (Modal)
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [activePaymentOrder, setActivePaymentOrder] = useState(null);
-  const [payments, setPayments] = useState([]);
-  const [paymentForm, setPaymentForm] = useState({ amount: '', payment_method: 'Cash' });
-  
+
+  // Customer reviews
+  const [reviews, setReviews] = useState({ reviews: [], count: 0, average: null });
+
+  // Table numbers whose guests tapped "Request bill" on their phone.
+  const [billRequests, setBillRequests] = useState([]);
+
+
   // Menu form state
   const [editingItem, setEditingItem] = useState(null);
   const [menuForm, setMenuForm] = useState({ name: '', category: 'Grill', price: '', image_url: '', is_available: true });
@@ -55,12 +62,18 @@ export default function Manager() {
     fetchMenu();
     fetchPending();
     fetchIngredients();
+    fetchReviews();
 
     const socket = io(API_URL);
     const refreshAll = () => { fetchDashboard(); fetchPending(); };
     socket.on('new_order', refreshAll);
     socket.on('order_status_updated', refreshAll);
     socket.on('qr_order_pending', fetchPending);
+    socket.on('review_submitted', fetchReviews);
+    // A guest tapped "Request bill" on their phone.
+    socket.on('bill_requested', ({ tableNumber }) => {
+      setBillRequests((prev) => (prev.includes(tableNumber) ? prev : [...prev, tableNumber]));
+    });
 
     return () => socket.disconnect();
   }, []);
@@ -101,6 +114,18 @@ export default function Manager() {
       setQrCodes((prev) => ({ ...prev, [tableId]: { dataUrl, url: data.url, table_number: data.table_number } }));
     } catch (error) {
       alert(`Failed to generate QR: ${error.response?.data?.error || error.message}`);
+    }
+  };
+
+  // Burns the printed sticker for one table and issues a fresh code.
+  const rotateTableQR = async (tableId) => {
+    if (!window.confirm('Reset this table\'s code? The QR currently on the table will stop working and must be reprinted.')) return;
+    try {
+      const { data } = await axios.post(`${API_URL}/api/tables/${tableId}/qr/rotate`);
+      const dataUrl = await QRCode.toDataURL(data.url, { width: 320, margin: 2 });
+      setQrCodes((prev) => ({ ...prev, [tableId]: { dataUrl, url: data.url, table_number: data.table_number } }));
+    } catch (error) {
+      alert(`Failed to reset code: ${error.response?.data?.error || error.message}`);
     }
   };
 
@@ -169,35 +194,17 @@ export default function Manager() {
     }
   };
 
-  const openPaymentModal = async (table) => {
+  const openPaymentModal = (table) => {
     setActivePaymentOrder(table);
     setShowPaymentModal(true);
-    fetchPayments(table.order_id);
   };
 
-  const fetchPayments = async (orderId) => {
+  const fetchReviews = async () => {
     try {
-      const res = await axios.get(`${API_URL}/api/orders/${orderId}/payments`);
-      setPayments(res.data);
+      const res = await axios.get(`${API_URL}/api/reviews`);
+      setReviews(res.data);
     } catch (error) {
-      console.error('Error fetching payments:', error);
-    }
-  };
-
-  const handleAddPayment = async (e) => {
-    e.preventDefault();
-    try {
-      const res = await axios.post(`${API_URL}/api/orders/${activePaymentOrder.order_id}/payments`, paymentForm);
-      setPaymentForm({ amount: '', payment_method: 'Cash' });
-      fetchPayments(activePaymentOrder.order_id);
-      
-      // Update local dashboard state if fully paid
-      if (res.data.isFullyPaid) {
-        fetchDashboard(); // This will refresh the table status
-      }
-    } catch (error) {
-      console.error('Error adding payment:', error);
-      alert('Failed to add payment');
+      console.error('Error fetching reviews:', error);
     }
   };
 
@@ -347,6 +354,14 @@ export default function Manager() {
           {/* TAB: TABLES */}
           {activeTab === 'tables' && (
             <div>
+              {billRequests.length > 0 && (
+                <div className="mb-6 bg-yellow-50 border border-yellow-300 rounded-lg p-4 flex items-center justify-between">
+                  <div className="text-sm font-medium text-yellow-900">
+                    🔔 Bill requested from the table: {billRequests.map((n) => `Table ${n}`).join(', ')}
+                  </div>
+                  <button onClick={() => setBillRequests([])} className="text-xs font-medium text-yellow-800 hover:text-yellow-950 underline">Dismiss</button>
+                </div>
+              )}
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold text-gray-900">Floor Plan</h2>
                 <button 
@@ -436,26 +451,103 @@ export default function Manager() {
           {activeTab === 'codes' && (
             <div>
               <h2 className="text-xl font-bold text-gray-900 mb-1">Table QR Codes</h2>
-              <p className="text-sm text-gray-500 mb-6">Generate and print a QR code for each table. Customers scan it to order for that table only.</p>
+              <p className="text-sm text-gray-500 mb-2">
+                Each table has one permanent code. Print it once, stick it on the table — it never expires,
+                so the same sticker works for every customer, every day.
+              </p>
+              <p className="text-sm text-gray-500 mb-6">
+                <strong>Check the link under each code before printing a batch.</strong> It must be your live
+                site address — anything else means reprinting every sticker.
+              </p>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {tables.map((table) => {
                   const code = qrCodes[table.table_id];
+                  const badUrl = code && /localhost|127\.0\.0\.1/.test(code.url);
                   return (
                     <div key={table.table_id} className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 flex flex-col items-center">
                       <h3 className="text-lg font-bold text-gray-900 mb-3">Table {table.table_number}</h3>
                       {code ? (
                         <>
-                          <img src={code.dataUrl} alt={`Table ${table.table_number} QR`} className="w-40 h-40 mb-3" />
-                          <button onClick={() => printTableQR(code)} className="w-full bg-blue-600 text-white text-sm font-medium py-2 rounded-md hover:bg-blue-700 shadow-sm">Print</button>
+                          <img src={code.dataUrl} alt={`Table ${table.table_number} QR`} className="w-40 h-40 mb-2" />
+                          <div className="w-full mb-3">
+                            <div className="text-[10px] uppercase tracking-wide font-semibold text-gray-400 mb-0.5">Scans to</div>
+                            <div className="text-[11px] text-gray-600 break-all leading-snug">{code.url}</div>
+                          </div>
+                          {badUrl && (
+                            <div className="w-full mb-3 text-[11px] font-medium text-red-700 bg-red-50 border border-red-200 rounded-md p-2">
+                              This link points at a development address and will not work on a customer&apos;s
+                              phone. Set FRONTEND_URL on the server before printing.
+                            </div>
+                          )}
+                          <button
+                            onClick={() => printTableQR(code)}
+                            disabled={badUrl}
+                            className="w-full bg-blue-600 text-white text-sm font-medium py-2 rounded-md hover:bg-blue-700 shadow-sm disabled:bg-gray-300 disabled:cursor-not-allowed"
+                          >
+                            Print
+                          </button>
                         </>
                       ) : (
                         <div className="w-40 h-40 mb-3 flex items-center justify-center bg-gray-50 border border-dashed border-gray-300 rounded-md text-gray-400 text-sm">No code yet</div>
                       )}
-                      <button onClick={() => generateTableQR(table.table_id)} className="w-full mt-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium py-2 rounded-md hover:bg-gray-50">{code ? 'Regenerate' : 'Generate QR'}</button>
+                      <button onClick={() => generateTableQR(table.table_id)} className="w-full mt-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium py-2 rounded-md hover:bg-gray-50">{code ? 'Show again' : 'Show QR'}</button>
+                      {code && (
+                        <button
+                          onClick={() => rotateTableQR(table.table_id)}
+                          className="w-full mt-2 text-xs font-medium text-red-600 hover:text-red-800 py-1"
+                        >
+                          Reset code (old sticker stops working)
+                        </button>
+                      )}
                     </div>
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/* TAB: CUSTOMER REVIEWS */}
+          {activeTab === 'reviews' && (
+            <div className="max-w-3xl mx-auto">
+              <h2 className="text-xl font-bold text-gray-900 mb-1">Customer Reviews</h2>
+              <p className="text-sm text-gray-500 mb-6">Collected on the customer&apos;s phone right after their bill is settled.</p>
+
+              <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-6 flex items-center gap-8">
+                <div>
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Average</div>
+                  <div className="text-3xl font-bold text-gray-900">
+                    {reviews.average !== null ? reviews.average.toFixed(2) : '—'}
+                    <span className="text-yellow-400 text-2xl ml-1">★</span>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Reviews</div>
+                  <div className="text-3xl font-bold text-gray-900">{reviews.count}</div>
+                </div>
+              </div>
+
+              {reviews.reviews.length === 0 ? (
+                <div className="text-center py-16 bg-white rounded-lg border border-gray-200 text-gray-500 text-sm">No reviews yet.</div>
+              ) : (
+                <div className="space-y-3">
+                  {reviews.reviews.map((r) => (
+                    <div key={r.id} className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
+                      <div className="flex justify-between items-start mb-1">
+                        <div className="text-yellow-400 text-lg leading-none">
+                          {'★'.repeat(r.rating)}<span className="text-gray-300">{'★'.repeat(5 - r.rating)}</span>
+                        </div>
+                        <div className="text-xs text-gray-400">{new Date(r.created_at).toLocaleString()}</div>
+                      </div>
+                      <div className="text-xs text-gray-500 mb-2">
+                        Table {r.table_number ?? '—'}
+                        {r.guest_name ? ` · ${r.guest_name}` : ''}
+                        {r.phone_number ? ` · ${r.phone_number}` : ''}
+                      </div>
+                      {r.comment && <p className="text-sm text-gray-800">{r.comment}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -742,74 +834,15 @@ export default function Manager() {
         </div>
       )}
 
-      {/* PAYMENT MODAL (Split Billing) */}
-      {showPaymentModal && activePaymentOrder && (() => {
-        const orderTotal = parseFloat(activePaymentOrder.total || 0);
-        const totalPaid = payments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
-        const remaining = Math.max(0, orderTotal - totalPaid);
-        const isFullyPaid = remaining === 0 || activePaymentOrder.order_status === 'Paid';
-
-        return (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 print:hidden">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden flex flex-col">
-              <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-                <h3 className="text-xl font-bold text-gray-900">Payment: Table {activePaymentOrder.table_number}</h3>
-                <button onClick={() => setShowPaymentModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
-              </div>
-              
-              <div className="p-6">
-                <div className="flex justify-between items-end mb-6 bg-gray-50 p-4 rounded-md border border-gray-200">
-                  <div>
-                    <p className="text-sm text-gray-500 mb-1">Total Bill</p>
-                    <p className="text-3xl font-bold text-gray-900">৳{orderTotal.toFixed(2)}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm text-gray-500 mb-1">Remaining</p>
-                    <p className={`text-xl font-bold ${remaining === 0 ? 'text-green-600' : 'text-red-600'}`}>৳{remaining.toFixed(2)}</p>
-                  </div>
-                </div>
-
-                <h4 className="font-bold text-gray-700 mb-2 text-sm uppercase tracking-wider">Payments Made</h4>
-                {payments.length === 0 ? (
-                  <p className="text-gray-500 text-sm mb-6 italic">No payments recorded yet.</p>
-                ) : (
-                  <ul className="mb-6 border border-gray-200 rounded-md divide-y divide-gray-100 max-h-40 overflow-y-auto">
-                    {payments.map(p => (
-                      <li key={p.id} className="p-3 flex justify-between text-sm">
-                        <span><span className="font-medium">{p.payment_method}</span> <span className="text-gray-400 text-xs ml-2">{new Date(p.created_at).toLocaleTimeString()}</span></span>
-                        <span className="font-medium text-gray-900">৳{parseFloat(p.amount).toFixed(2)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-
-                {!isFullyPaid && (
-                  <form onSubmit={handleAddPayment} className="flex gap-3 mb-6">
-                    <div className="flex-1">
-                      <select required value={paymentForm.payment_method} onChange={e => setPaymentForm({...paymentForm, payment_method: e.target.value})} className="w-full border border-gray-300 rounded-md p-2 outline-none focus:border-blue-500 shadow-sm text-sm">
-                        {['Cash', 'Card', 'bKash', 'Nagad', 'Other'].map(m => <option key={m} value={m}>{m}</option>)}
-                      </select>
-                    </div>
-                    <div className="w-1/3">
-                      <input type="number" step="0.01" required max={remaining} value={paymentForm.amount} onChange={e => setPaymentForm({...paymentForm, amount: e.target.value})} className="w-full border border-gray-300 rounded-md p-2 outline-none focus:border-blue-500 shadow-sm text-sm" placeholder="Amount" />
-                    </div>
-                    <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 shadow-sm">Add</button>
-                  </form>
-                )}
-              </div>
-              
-              <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex gap-3">
-                <button onClick={() => setShowPaymentModal(false)} className="flex-1 bg-white border border-gray-300 text-gray-700 rounded-md font-medium hover:bg-gray-50 py-2.5">Close</button>
-                {isFullyPaid && (
-                  <button onClick={() => handleCheckout(activePaymentOrder.order_id, activePaymentOrder.table_id)} className="flex-1 bg-green-600 text-white rounded-md font-medium hover:bg-green-700 py-2.5 shadow-sm">
-                    Print Invoice &amp; Close Table
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {/* PAYMENT MODAL (Split Billing) -- shared with the waiter's handheld */}
+      {showPaymentModal && activePaymentOrder && (
+        <PaymentModal
+          order={activePaymentOrder}
+          onClose={() => setShowPaymentModal(false)}
+          onPaid={fetchDashboard}
+          onCheckout={handleCheckout}
+        />
+      )}
     </>
   );
 }
