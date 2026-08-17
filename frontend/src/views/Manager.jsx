@@ -555,9 +555,9 @@ export default function Manager() {
 
           {/* TAB: MENU MANAGEMENT */}
           {activeTab === 'menu' && (
-            <div className="flex gap-8 items-start">
+            <div className="flex flex-col lg:flex-row gap-8 items-start">
               {/* Form */}
-              <div className="w-1/3 bg-white p-6 rounded-lg shadow-sm border border-gray-200 sticky top-6">
+              <div className="w-full lg:w-1/3 bg-white p-6 rounded-lg shadow-sm border border-gray-200 lg:sticky top-6">
                 <h2 className="text-xl font-bold text-gray-900 mb-6">{editingItem ? 'Edit Menu Item' : 'Add New Item'}</h2>
                 <form onSubmit={handleSaveMenu} className="space-y-4">
                   <div>
@@ -640,9 +640,9 @@ export default function Manager() {
 
           {/* TAB: INVENTORY */}
           {activeTab === 'inventory' && (
-            <div className="flex gap-8 items-start">
+            <div className="flex flex-col lg:flex-row gap-8 items-start">
               {/* Form */}
-              <div className="w-1/3 bg-white p-6 rounded-lg shadow-sm border border-gray-200 sticky top-6">
+              <div className="w-full lg:w-1/3 bg-white p-6 rounded-lg shadow-sm border border-gray-200 lg:sticky top-6">
                 <h2 className="text-xl font-bold text-gray-900 mb-6">{editingIngredient ? 'Edit Ingredient' : 'Add New Ingredient'}</h2>
                 <form onSubmit={handleSaveInventory} className="space-y-4">
                   <div>
