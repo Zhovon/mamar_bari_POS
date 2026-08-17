@@ -61,6 +61,10 @@ export default function Login() {
           </button>
         </form>
       </div>
+      
+      <div className="absolute bottom-6 w-full text-center text-sm text-gray-500 font-medium">
+        &copy; {new Date().getFullYear()} Mamar Bari POS &bull; Created by <a href="https://github.com/Zhovon" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Zhovon</a>
+      </div>
     </div>
   );
 }
