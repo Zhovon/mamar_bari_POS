@@ -59,6 +59,19 @@ export default function Manager() {
   const navigate = useNavigate();
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
+  const [activeDropdownId, setActiveDropdownId] = useState(null);
+
+  // Click-away listener for dropdowns
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (!e.target.closest('.action-dropdown-container')) {
+        setActiveDropdownId(null);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
   useEffect(() => {
     fetchDashboard();
     fetchMenu();
@@ -597,17 +610,17 @@ export default function Manager() {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {menuItems.map(item => (
                       <tr key={item.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-4 py-3 whitespace-nowrap">
                           <div className="flex items-center">
                             <div className="h-10 w-10 flex-shrink-0">
                               <img className="h-10 w-10 rounded-md object-cover" src={item.image_url} alt="" />
@@ -617,17 +630,24 @@ export default function Manager() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.category}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-bold">৳{parseFloat(item.price).toFixed(2)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">{item.category}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 font-bold">৳{parseFloat(item.price).toFixed(2)}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
                           <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${item.is_available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                             {item.is_available ? 'In Stock' : 'Out of Stock'}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          <button onClick={() => openRecipeModal(item)} className="text-purple-600 hover:text-purple-900 mr-4">Recipe</button>
-                          <button onClick={() => { setEditingItem(item); setMenuForm(item); }} className="text-blue-600 hover:text-blue-900 mr-4">Edit</button>
-                          <button onClick={() => handleDeleteMenu(item.id)} className="text-red-600 hover:text-red-900">Delete</button>
+                        <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium relative action-dropdown-container">
+                          <button onClick={() => setActiveDropdownId(activeDropdownId === `menu-${item.id}` ? null : `menu-${item.id}`)} className="p-2 text-gray-500 hover:text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-full transition-colors focus:outline-none">
+                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zM12 10a2 2 0 11-4 0 2 2 0 014 0zM16 12a2 2 0 100-4 2 2 0 000 4z"/></svg>
+                          </button>
+                          {activeDropdownId === `menu-${item.id}` && (
+                            <div className="absolute right-12 top-2 mt-2 w-32 bg-white rounded-md shadow-lg border border-gray-100 z-50 py-1 text-left">
+                              <button onClick={() => { openRecipeModal(item); setActiveDropdownId(null); }} className="block w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 text-left">Recipe</button>
+                              <button onClick={() => { setEditingItem(item); setMenuForm(item); setActiveDropdownId(null); }} className="block w-full px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 text-left">Edit</button>
+                              <button onClick={() => { handleDeleteMenu(item.id); setActiveDropdownId(null); }} className="block w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 text-left">Delete</button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -678,27 +698,34 @@ export default function Manager() {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ingredient</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ingredient</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {ingredients.map(ing => (
                       <tr key={ing.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{ing.name}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{parseFloat(ing.current_stock).toFixed(2)} {ing.unit}</td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{ing.name}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">{parseFloat(ing.current_stock).toFixed(2)} {ing.unit}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
                           {ing.current_stock <= ing.alert_threshold ? (
                             <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Low Stock</span>
                           ) : (
                             <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">OK</span>
                           )}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          <button onClick={() => { setEditingIngredient(ing); setInventoryForm(ing); }} className="text-blue-600 hover:text-blue-900 mr-4">Edit</button>
-                          <button onClick={() => handleDeleteInventory(ing.id)} className="text-red-600 hover:text-red-900">Delete</button>
+                        <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium relative action-dropdown-container">
+                          <button onClick={() => setActiveDropdownId(activeDropdownId === `inv-${ing.id}` ? null : `inv-${ing.id}`)} className="p-2 text-gray-500 hover:text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-full transition-colors focus:outline-none">
+                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zM12 10a2 2 0 11-4 0 2 2 0 014 0zM16 12a2 2 0 100-4 2 2 0 000 4z"/></svg>
+                          </button>
+                          {activeDropdownId === `inv-${ing.id}` && (
+                            <div className="absolute right-12 top-2 mt-2 w-32 bg-white rounded-md shadow-lg border border-gray-100 z-50 py-1 text-left">
+                              <button onClick={() => { setEditingIngredient(ing); setInventoryForm(ing); setActiveDropdownId(null); }} className="block w-full px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 text-left">Edit</button>
+                              <button onClick={() => { handleDeleteInventory(ing.id); setActiveDropdownId(null); }} className="block w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 text-left">Delete</button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -809,7 +836,9 @@ export default function Manager() {
                           <td className="px-4 py-2 font-medium">{recipe.name}</td>
                           <td className="px-4 py-2">{parseFloat(recipe.quantity_required).toFixed(2)} {recipe.unit}</td>
                           <td className="px-4 py-2 text-right">
-                            <button onClick={() => handleDeleteRecipe(recipe.id)} className="text-red-600 hover:text-red-800">Remove</button>
+                            <button onClick={() => handleDeleteRecipe(recipe.id)} className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-full transition-colors" title="Remove Ingredient">
+                              <svg className="w-5 h-5 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
                           </td>
                         </tr>
                       ))}
