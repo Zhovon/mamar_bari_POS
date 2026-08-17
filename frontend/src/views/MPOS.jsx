@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import PaymentModal from '../components/PaymentModal';
+import { useToast } from '../context/ToastContext';
 
 export default function MPOS() {
   const [menuItems, setMenuItems] = useState([]);
@@ -12,6 +13,7 @@ export default function MPOS() {
   const [cart, setCart] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showOrdersModal, setShowOrdersModal] = useState(false);
+  const toast = useToast();
   // Guests pay at the table as often as at the desk, so the waiter's handheld
   // gets the same split-billing modal the manager uses.
   const [payingOrder, setPayingOrder] = useState(null);
@@ -53,7 +55,7 @@ export default function MPOS() {
 
   const addToCart = (item) => {
     if (!selectedTable) {
-      alert("Please select a table first!");
+      toast.error("Please select a table first!");
       return;
     }
     setCart((prev) => {
@@ -79,13 +81,13 @@ export default function MPOS() {
       };
       
       await axios.post(`${API_URL}/api/orders`, payload);
-      alert("Order Sent to Kitchen!");
+      toast.success("Order Sent to Kitchen!");
       setCart([]);
       setSelectedTable(null);
       fetchData();
     } catch (error) {
       console.error('Error sending order:', error);
-      alert(`Failed to send order: ${error.response?.data?.error || error.message}`);
+      toast.error(`Failed to send order: ${error.response?.data?.error || error.message}`);
     }
   };
 

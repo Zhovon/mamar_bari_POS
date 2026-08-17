@@ -8,6 +8,7 @@ import KDS from './views/KDS';
 import Manager from './views/Manager';
 import Admin from './views/Admin';
 import TableOrder from './views/TableOrder';
+import { ToastProvider } from './context/ToastContext';
 
 // Axios Interceptor for JWT
 axios.interceptors.request.use(
@@ -23,17 +24,19 @@ axios.interceptors.request.use(
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Navigate to="/login" replace />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/order" element={<TableOrder />} />
-        <Route path="/mpos" element={<MPOS />} />
-        <Route path="/kds" element={<KDS />} />
-        <Route path="/manager" element={<Manager />} />
-        <Route path="/admin" element={<Admin />} />
-      </Routes>
-    </BrowserRouter>
+    <ToastProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/order" element={<TableOrder />} />
+          <Route path="/mpos" element={<MPOS />} />
+          <Route path="/kds" element={<KDS />} />
+          <Route path="/manager" element={<Manager />} />
+          <Route path="/admin" element={<Admin />} />
+        </Routes>
+      </BrowserRouter>
+    </ToastProvider>
   );
 }
 
