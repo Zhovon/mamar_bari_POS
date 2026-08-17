@@ -320,12 +320,6 @@ export default function TableOrder() {
         <p className="text-gray-500 text-sm max-w-xs mb-6">
           We hope to see you again at Mamar Bari.
         </p>
-        <button
-          onClick={startSession}
-          className="bg-blue-600 text-white font-medium px-6 py-2.5 rounded-md hover:bg-blue-700 shadow-sm"
-        >
-          Start a new order
-        </button>
       </div>
     );
   }
