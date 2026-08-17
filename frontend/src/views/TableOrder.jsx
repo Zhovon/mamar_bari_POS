@@ -495,6 +495,11 @@ export default function TableOrder() {
           </button>
         </div>
       )}
+      
+      {/* Footer */}
+      <div className="text-center text-sm text-gray-500 font-medium py-8 pb-32">
+        &copy; {new Date().getFullYear()} Mamar Bari POS &bull; Created by <a href="https://github.com/Zhovon" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Zhovon</a>
+      </div>
     </div>
   );
 }
