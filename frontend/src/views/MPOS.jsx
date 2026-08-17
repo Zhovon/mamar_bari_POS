@@ -17,6 +17,7 @@ export default function MPOS() {
   // Guests pay at the table as often as at the desk, so the waiter's handheld
   // gets the same split-billing modal the manager uses.
   const [payingOrder, setPayingOrder] = useState(null);
+  const [receiptData, setReceiptData] = useState(null);
   const [billRequests, setBillRequests] = useState([]);
   const navigate = useNavigate();
 
@@ -116,13 +117,25 @@ export default function MPOS() {
 
   const handleCheckout = async (orderId) => {
     try {
-      await axios.put(`${API_URL}/api/orders/${orderId}/status`, { status: 'Completed' });
-      toast.success('Table closed successfully!');
-      setPayingOrder(null);
-      fetchData();
-    } catch (err) {
-      toast.error('Failed to close table');
-      console.error(err);
+      const receiptRes = await axios.get(`${API_URL}/api/orders/${orderId}/receipt`);
+      setReceiptData(receiptRes.data);
+
+      setTimeout(async () => {
+        window.print();
+        try {
+          await axios.put(`${API_URL}/api/orders/${orderId}/status`, { status: 'Completed' });
+          toast.success('Table closed successfully!');
+          setReceiptData(null);
+          setPayingOrder(null);
+          fetchData();
+        } catch (err) {
+          console.error('Error completing order after print:', err);
+          toast.error('Failed to close table');
+        }
+      }, 500);
+    } catch (error) {
+      console.error('Error generating receipt:', error);
+      toast.error('Failed to fetch receipt data.');
     }
   };
 
@@ -336,6 +349,61 @@ export default function MPOS() {
         />
       )}
 
+      {/* PRINT RECEIPT SECTION (Visible only during print) */}
+      {receiptData && (
+        <div className="hidden print:block w-full text-black font-mono text-xs p-2 bg-white h-auto">
+          <div className="text-center mb-4">
+            <h1 className="text-xl font-bold uppercase tracking-tight">Mamar Bari Restaurant</h1>
+            <p className="mt-1">123 Food Street, Dhaka</p>
+            <p>Tel: +880 1234 567 890</p>
+          </div>
+          
+          <div className="mb-4 border-b border-black pb-2 text-xs">
+            <div>Date: {new Date(receiptData.created_at).toLocaleString()}</div>
+            <div>Order ID: {receiptData.id.split('-')[0]}...</div>
+            <div>Table: {receiptData.table_number}</div>
+            <div>Waiter: {receiptData.waiter_name || 'System'}</div>
+          </div>
+
+          <table className="w-full text-left mb-4 text-xs">
+            <thead>
+              <tr className="border-b border-black">
+                <th className="pb-1 font-bold">Item</th>
+                <th className="pb-1 text-center font-bold">Qty</th>
+                <th className="pb-1 text-right font-bold">Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              {receiptData.items.map((item, idx) => (
+                <tr key={idx}>
+                  <td className="py-1">{item.name}</td>
+                  <td className="py-1 text-center">{item.quantity}</td>
+                  <td className="py-1 text-right">{parseFloat(item.subtotal).toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div className="border-t border-black pt-2 text-xs flex justify-between">
+            <span>Subtotal:</span>
+            <span>{parseFloat(receiptData.subtotal).toFixed(2)}</span>
+          </div>
+          <div className="text-xs flex justify-between mt-1">
+            <span>Discount:</span>
+            <span>{parseFloat(receiptData.discount).toFixed(2)}</span>
+          </div>
+          <div className="font-bold text-sm flex justify-between mt-2 pt-2 border-t border-black">
+            <span>TOTAL:</span>
+            <span>৳{parseFloat(receiptData.total).toFixed(2)}</span>
+          </div>
+
+          <div className="text-center mt-6 text-xs font-bold">
+            Thank you for dining with us!
+            <br/>
+            Please come again.
+          </div>
+        </div>
+      )}
     </div>
   );
 }
