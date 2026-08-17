@@ -4,6 +4,7 @@ import { io } from 'socket.io-client';
 import { useNavigate } from 'react-router-dom';
 import QRCode from 'qrcode';
 import PaymentModal from '../components/PaymentModal';
+import { useToast } from '../context/ToastContext';
 
 const TABS = [
   { key: 'tables', label: 'Tables' },
@@ -33,6 +34,7 @@ export default function Manager() {
   const [activeRecipeMenuItem, setActiveRecipeMenuItem] = useState(null);
   const [activeRecipes, setActiveRecipes] = useState([]);
   const [recipeForm, setRecipeForm] = useState({ ingredient_id: '', quantity_required: '' });
+  const toast = useToast();
   
   // Payment state (Modal)
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -93,7 +95,7 @@ export default function Manager() {
       fetchPending();
       fetchDashboard();
     } catch (error) {
-      alert(`Failed to confirm: ${error.response?.data?.error || error.message}`);
+      toast.error(`Failed to confirm: ${error.response?.data?.error || error.message}`);
     }
   };
 
@@ -103,7 +105,7 @@ export default function Manager() {
       await axios.post(`${API_URL}/api/orders/${orderId}/reject`);
       fetchPending();
     } catch (error) {
-      alert(`Failed to reject: ${error.response?.data?.error || error.message}`);
+      toast.error(`Failed to reject: ${error.response?.data?.error || error.message}`);
     }
   };
 
@@ -113,7 +115,7 @@ export default function Manager() {
       const dataUrl = await QRCode.toDataURL(data.url, { width: 320, margin: 2 });
       setQrCodes((prev) => ({ ...prev, [tableId]: { dataUrl, url: data.url, table_number: data.table_number } }));
     } catch (error) {
-      alert(`Failed to generate QR: ${error.response?.data?.error || error.message}`);
+      toast.error(`Failed to generate QR: ${error.response?.data?.error || error.message}`);
     }
   };
 
@@ -125,7 +127,7 @@ export default function Manager() {
       const dataUrl = await QRCode.toDataURL(data.url, { width: 320, margin: 2 });
       setQrCodes((prev) => ({ ...prev, [tableId]: { dataUrl, url: data.url, table_number: data.table_number } }));
     } catch (error) {
-      alert(`Failed to reset code: ${error.response?.data?.error || error.message}`);
+      toast.error(`Failed to reset code: ${error.response?.data?.error || error.message}`);
     }
   };
 
@@ -180,7 +182,7 @@ export default function Manager() {
         window.print();
         try {
           await axios.put(`${API_URL}/api/orders/${orderId}/status`, { status: 'Completed' });
-          alert(`Table checked out successfully!`);
+          toast.success(`Table checked out successfully!`);
           setReceiptData(null); 
           setShowPaymentModal(false);
           fetchDashboard();
@@ -190,7 +192,7 @@ export default function Manager() {
       }, 500);
     } catch (error) {
       console.error('Error generating receipt:', error);
-      alert('Failed to fetch receipt data.');
+      toast.error('Failed to fetch receipt data.');
     }
   };
 
@@ -310,7 +312,7 @@ export default function Manager() {
       setNewTableCap(4);
       fetchDashboard();
     } catch (error) {
-      alert(`Failed to add table: ${error.response?.data?.error || error.message}`);
+      toast.error(`Failed to add table: ${error.response?.data?.error || error.message}`);
     }
   };
 
