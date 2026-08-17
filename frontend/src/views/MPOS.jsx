@@ -67,6 +67,20 @@ export default function MPOS() {
     });
   };
 
+  const updateCartQty = (id, delta) => {
+    setCart((prev) => prev.map((item) => {
+      if (item.id === id) {
+        const newQty = item.qty + delta;
+        return newQty > 0 ? { ...item, qty: newQty } : item;
+      }
+      return item;
+    }));
+  };
+
+  const removeCartItem = (id) => {
+    setCart((prev) => prev.filter((item) => item.id !== id));
+  };
+
   const cartTotal = cart.reduce((sum, item) => sum + (parseFloat(item.price) * item.qty), 0);
 
   const sendOrder = async () => {
@@ -188,12 +202,36 @@ export default function MPOS() {
             <div className="text-gray-400 text-center mt-10 text-sm font-medium">Cart is empty</div>
           ) : (
             cart.map((item, idx) => (
-              <div key={idx} className="flex justify-between items-start bg-gray-50 border border-gray-100 p-3 rounded-md">
-                <div>
-                  <div className="text-gray-900 font-medium text-sm">{item.name}</div>
-                  <div className="text-gray-500 text-xs mt-0.5">৳{item.price} x {item.qty}</div>
+              <div key={idx} className="flex flex-col gap-2 bg-gray-50 border border-gray-200 p-3 rounded-md">
+                <div className="flex justify-between items-start">
+                  <div className="text-gray-900 font-medium text-sm pr-2">{item.name}</div>
+                  <button 
+                    onClick={() => removeCartItem(item.id)}
+                    className="text-gray-400 hover:text-red-500 transition-colors"
+                    aria-label="Remove item"
+                  >
+                    &times;
+                  </button>
                 </div>
-                <div className="text-gray-900 font-bold text-sm">৳{(item.price * item.qty).toFixed(2)}</div>
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => updateCartQty(item.id, -1)}
+                      disabled={item.qty <= 1}
+                      className="w-7 h-7 rounded bg-white border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+                    >
+                      -
+                    </button>
+                    <span className="text-sm font-medium w-4 text-center">{item.qty}</span>
+                    <button 
+                      onClick={() => updateCartQty(item.id, 1)}
+                      className="w-7 h-7 rounded bg-white border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-100"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <div className="text-gray-900 font-bold text-sm">৳{(item.price * item.qty).toFixed(2)}</div>
+                </div>
               </div>
             ))
           )}
