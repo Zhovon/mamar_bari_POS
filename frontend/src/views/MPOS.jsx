@@ -114,6 +114,18 @@ export default function MPOS() {
     }
   };
 
+  const handleCheckout = async (orderId) => {
+    try {
+      await axios.put(`${API_URL}/api/orders/${orderId}/status`, { status: 'Completed' });
+      toast.success('Table closed successfully!');
+      setPayingOrder(null);
+      fetchData();
+    } catch (err) {
+      toast.error('Failed to close table');
+      console.error(err);
+    }
+  };
+
   const handleLogout = () => {
     localStorage.clear();
     navigate('/login');
@@ -320,6 +332,7 @@ export default function MPOS() {
           order={payingOrder}
           onClose={() => setPayingOrder(null)}
           onPaid={fetchData}
+          onCheckout={handleCheckout}
         />
       )}
 
