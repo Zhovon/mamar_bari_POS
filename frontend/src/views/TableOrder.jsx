@@ -450,7 +450,7 @@ export default function TableOrder() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-2 pt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
             <button
               onClick={requestBill}
               disabled={billRequested}
@@ -481,7 +481,7 @@ export default function TableOrder() {
               </div>
             </div>
           ))}
-          <div className="grid grid-cols-2 gap-2 pt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name (optional)" className="border border-gray-300 rounded-md p-2 text-sm" />
             <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone (optional)" className="border border-gray-300 rounded-md p-2 text-sm" />
           </div>
