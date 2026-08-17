@@ -1,16 +1,19 @@
 require('dotenv').config();
 const db = require('./db');
+const { generateTableCode } = require('./tokens');
 
 async function seedDatabase() {
   try {
     console.log('Seeding database...');
     
-    // Seed Tables
-    await db.query(`
-      INSERT INTO restaurant_tables (table_number, capacity) VALUES 
-      (1, 2), (2, 4), (3, 4), (4, 6), (5, 8)
-      ON CONFLICT DO NOTHING;
-    `);
+    // Seed Tables (each needs its own permanent printed QR code)
+    for (const [number, capacity] of [[1, 2], [2, 4], [3, 4], [4, 6], [5, 8]]) {
+      await db.query(
+        `INSERT INTO restaurant_tables (table_number, capacity, qr_code) VALUES ($1, $2, $3)
+         ON CONFLICT DO NOTHING;`,
+        [number, capacity, generateTableCode()]
+      );
+    }
 
     // Seed Menu Items
     await db.query(`
