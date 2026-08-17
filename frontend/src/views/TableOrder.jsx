@@ -12,12 +12,6 @@ const api = axios.create({ baseURL: API_URL });
 // scans: one stable device id, plus the live session token for this table.
 const DEVICE_KEY = 'mb_device_id';
 const sessionKey = (code) => `mb_session_${code}`;
-const closedKey = (code) => `mb_closed_${code}`;
-
-// How long a finished visit keeps showing the "thank you" screen. Long enough
-// that refreshing the page after a review doesn't silently reopen the session,
-// short enough that tomorrow's diner at this table isn't greeted by it.
-const CLOSED_NOTICE_MS = 2 * 60 * 60 * 1000;
 
 function getDeviceId() {
   let id = localStorage.getItem(DEVICE_KEY);
@@ -80,7 +74,6 @@ export default function TableOrder() {
   const endLocally = useCallback((reason) => {
     if (code) {
       localStorage.removeItem(sessionKey(code));
-      localStorage.setItem(closedKey(code), JSON.stringify({ at: Date.now(), reason }));
     }
     sessionRef.current = null;
     setSession(null);
@@ -134,21 +127,6 @@ export default function TableOrder() {
         setMenu(data);
       } catch {
         // A menu fetch failure shouldn't block an existing session's bill view.
-      }
-
-      // A visit that just ended stays ended across a refresh. Coming back is an
-      // explicit tap, not an accident of reloading the page.
-      const closed = localStorage.getItem(closedKey(code));
-      if (closed) {
-        try {
-          const { at, reason } = JSON.parse(closed);
-          if (Date.now() - at < CLOSED_NOTICE_MS) {
-            setClosedReason(reason);
-            setPhase('closed');
-            return;
-          }
-        } catch { /* corrupt entry -- fall through and start fresh */ }
-        localStorage.removeItem(closedKey(code));
       }
 
       // Resume an existing session so a refresh or a lost signal doesn't split
