@@ -149,13 +149,13 @@ export default function MPOS() {
   const readyOrdersCount = activeOrders.filter(o => o.status === 'Ready').length;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
+    <div className="flex flex-col lg:flex-row h-screen overflow-hidden bg-gray-50">
       
       {/* Left: Menu Grid */}
-      <div className="flex-1 p-6 overflow-y-auto">
-        <div className="flex justify-between items-center mb-6">
-          <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Waiter POS</h1>
+      <div className="flex-1 p-4 lg:p-6 overflow-y-auto">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4 w-full sm:w-auto">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">Waiter POS</h1>
             
             <button
               onClick={() => setShowOrdersModal(true)}
@@ -176,9 +176,9 @@ export default function MPOS() {
           </div>
           
           <select 
-            className="bg-white text-gray-900 font-medium py-2 px-4 rounded-md border border-gray-300 outline-none focus:border-blue-500 shadow-sm"
+            className="w-full sm:w-auto bg-white text-gray-900 font-medium py-2 px-4 rounded-md border border-gray-300 outline-none focus:border-blue-500 shadow-sm"
             value={selectedTable || ""}
-            onChange={(e) => setSelectedTable(e.target.value)}
+            onChange={e => setSelectedTable(e.target.value)}
           >
             <option value="" disabled>Select Table...</option>
             {tables.map(t => (
@@ -213,8 +213,8 @@ export default function MPOS() {
         </div>
       </div>
 
-      {/* Right: Cart Sidebar */}
-      <div className="w-80 bg-white border-l border-gray-200 flex flex-col shadow-sm">
+      {/* Right: Cart (Side or Bottom depending on screen) */}
+      <div className="w-full lg:w-96 h-[40vh] lg:h-full flex-shrink-0 bg-white border-t lg:border-l lg:border-t-0 border-gray-200 flex flex-col shadow-lg z-10">
         <div className="p-5 border-b border-gray-200 bg-gray-50">
           <h2 className="text-lg font-bold text-gray-900">Current Order</h2>
           <p className="text-sm text-gray-500 font-medium">

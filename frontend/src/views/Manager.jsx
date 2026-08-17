@@ -326,15 +326,15 @@ export default function Manager() {
       <div className="min-h-screen bg-gray-50 flex flex-col print:hidden">
         
         {/* Header & Navigation */}
-        <div className="bg-white border-b border-gray-200 p-6">
-          <div className="flex justify-between items-center mb-6">
+        <div className="bg-white border-b border-gray-200 p-4 lg:p-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6 gap-4">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Manager Dashboard</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Manager Dashboard</h1>
             </div>
-            <button onClick={handleLogout} className="bg-white border border-gray-300 text-gray-700 font-medium px-4 py-2 rounded-md hover:bg-gray-50 transition-colors shadow-sm">Logout</button>
+            <button onClick={handleLogout} className="w-full sm:w-auto bg-white border border-gray-300 text-gray-700 font-medium px-4 py-2 rounded-md hover:bg-gray-50 transition-colors shadow-sm">Logout</button>
           </div>
           
-          <div className="flex space-x-4 border-b border-gray-200">
+          <div className="flex space-x-4 border-b border-gray-200 overflow-x-auto whitespace-nowrap hide-scrollbar">
             {TABS.map(tab => (
               <button
                 key={tab.key}
@@ -351,7 +351,7 @@ export default function Manager() {
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 p-6 lg:p-12 overflow-y-auto">
+        <div className="flex-1 p-4 lg:p-12 overflow-y-auto">
           
           {/* TAB: TABLES */}
           {activeTab === 'tables' && (
@@ -593,6 +593,7 @@ export default function Manager() {
 
               {/* Data Table */}
               <div className="flex-1 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                <div className="overflow-x-auto w-full">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
@@ -632,6 +633,7 @@ export default function Manager() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             </div>
           )}
@@ -672,6 +674,7 @@ export default function Manager() {
 
               {/* Data Table */}
               <div className="flex-1 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                <div className="overflow-x-auto w-full">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
@@ -701,6 +704,7 @@ export default function Manager() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             </div>
           )}
@@ -774,8 +778,8 @@ export default function Manager() {
       )}
       {/* RECIPE MODAL */}
       {showRecipeModal && activeRecipeMenuItem && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 print:hidden">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
               <h3 className="text-xl font-bold text-gray-900">Recipe: {activeRecipeMenuItem.name}</h3>
               <button onClick={() => setShowRecipeModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
@@ -790,30 +794,32 @@ export default function Manager() {
               {activeRecipes.length === 0 ? (
                 <div className="text-gray-500 text-sm mb-6 italic">No ingredients added yet.</div>
               ) : (
-                <table className="w-full mb-6 border border-gray-200 rounded-md overflow-hidden">
-                  <thead className="bg-gray-100 text-xs uppercase text-gray-600 text-left">
-                    <tr>
-                      <th className="px-4 py-2">Ingredient</th>
-                      <th className="px-4 py-2">Required Qty</th>
-                      <th className="px-4 py-2 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 text-sm">
-                    {activeRecipes.map(recipe => (
-                      <tr key={recipe.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-2 font-medium">{recipe.name}</td>
-                        <td className="px-4 py-2">{parseFloat(recipe.quantity_required).toFixed(2)} {recipe.unit}</td>
-                        <td className="px-4 py-2 text-right">
-                          <button onClick={() => handleDeleteRecipe(recipe.id)} className="text-red-600 hover:text-red-800">Remove</button>
-                        </td>
+                <div className="overflow-x-auto w-full mb-6 border border-gray-200 rounded-md">
+                  <table className="w-full text-left min-w-[400px]">
+                    <thead className="bg-gray-100 text-xs uppercase text-gray-600 text-left">
+                      <tr>
+                        <th className="px-4 py-2">Ingredient</th>
+                        <th className="px-4 py-2">Required Qty</th>
+                        <th className="px-4 py-2 text-right">Action</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 text-sm">
+                      {activeRecipes.map(recipe => (
+                        <tr key={recipe.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-2 font-medium">{recipe.name}</td>
+                          <td className="px-4 py-2">{parseFloat(recipe.quantity_required).toFixed(2)} {recipe.unit}</td>
+                          <td className="px-4 py-2 text-right">
+                            <button onClick={() => handleDeleteRecipe(recipe.id)} className="text-red-600 hover:text-red-800">Remove</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
 
               <h4 className="font-bold text-gray-700 mb-3">Add Ingredient</h4>
-              <form onSubmit={handleAddRecipe} className="flex gap-4 items-end bg-gray-50 p-4 border border-gray-200 rounded-md">
+              <form onSubmit={handleAddRecipe} className="flex flex-col sm:flex-row gap-4 sm:items-end bg-gray-50 p-4 border border-gray-200 rounded-md">
                 <div className="flex-1">
                   <label className="block text-xs font-medium text-gray-700 mb-1">Select Ingredient</label>
                   <select required value={recipeForm.ingredient_id} onChange={e => setRecipeForm({...recipeForm, ingredient_id: e.target.value})} className="w-full border-gray-300 rounded-md shadow-sm p-2 border focus:border-blue-500 text-sm">
@@ -825,7 +831,7 @@ export default function Manager() {
                   <label className="block text-xs font-medium text-gray-700 mb-1">Quantity</label>
                   <input type="number" step="0.01" required value={recipeForm.quantity_required} onChange={e => setRecipeForm({...recipeForm, quantity_required: e.target.value})} className="w-full border-gray-300 rounded-md shadow-sm p-2 border focus:border-blue-500 text-sm" placeholder="e.g. 1.5" />
                 </div>
-                <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-md font-medium hover:bg-blue-700 text-sm shadow-sm h-[38px]">Add</button>
+                <button type="submit" className="w-full sm:w-auto bg-blue-600 text-white px-4 py-2 rounded-md font-medium hover:bg-blue-700 text-sm shadow-sm sm:h-[38px]">Add</button>
               </form>
             </div>
             
