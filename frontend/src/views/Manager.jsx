@@ -403,7 +403,16 @@ export default function Manager() {
                           <>
                             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Current Bill</div>
                             <div className="text-3xl font-bold text-gray-900 tracking-tight">৳{parseFloat(table.total).toFixed(2)}</div>
-                            <div className="text-xs font-medium text-blue-600 mt-2 bg-blue-50 px-2 py-1 rounded">Status: {table.order_status}</div>
+                            <div className="text-xs font-medium text-blue-600 mt-2 bg-blue-50 px-2 py-1 rounded mb-3">Status: {table.order_status}</div>
+                            {table.items && table.items.length > 0 && (
+                              <ul className="w-full text-xs text-gray-600 bg-white rounded border border-gray-200 p-2 text-left space-y-1 max-h-24 overflow-y-auto">
+                                {table.items.map((it, i) => (
+                                  <li key={i} className="flex justify-between border-b border-gray-50 last:border-0 pb-1 last:pb-0">
+                                    <span className="truncate pr-2">{it.quantity}× {it.name}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
                           </>
                         ) : (
                           <div className="text-gray-400 text-sm font-medium">No active orders</div>

@@ -292,11 +292,20 @@ export default function MPOS() {
               ) : (
                 activeOrders.map(order => (
                   <div key={order.order_id} className={`p-4 rounded-md flex justify-between items-center border ${order.status === 'Ready' ? 'border-yellow-200 bg-yellow-50' : 'border-gray-200 bg-white'}`}>
-                    <div>
+                    <div className="flex-1">
                       <div className="text-base font-bold text-gray-900 mb-0.5">Table {order.table_number}</div>
-                      <div className="text-xs text-gray-500">
+                      <div className="text-xs text-gray-500 mb-2">
                         Order #{order.order_id.split('-')[0]} · ৳{parseFloat(order.total || 0).toFixed(2)}
                       </div>
+                      {order.items && order.items.length > 0 && (
+                        <ul className="text-xs text-gray-600 bg-white/50 rounded p-2 border border-gray-100 space-y-0.5 mr-4 max-h-24 overflow-y-auto">
+                          {order.items.map((it, i) => (
+                            <li key={i} className="flex justify-between">
+                              <span>{it.quantity}× {it.name}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       {order.status === 'Ready' ? (
