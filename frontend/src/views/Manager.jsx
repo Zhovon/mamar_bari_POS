@@ -819,7 +819,7 @@ export default function Manager() {
 
       {/* ADD TABLE MODAL */}
       {showAddTable && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center backdrop-blur-sm p-4">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center backdrop-blur-sm p-4 print:hidden">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
               <h3 className="text-xl font-bold text-gray-900">Add New Table</h3>
@@ -859,7 +859,7 @@ export default function Manager() {
 
       {/* RECIPE MODAL */}
       {showRecipeModal && activeRecipeMenuItem && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center backdrop-blur-sm p-4">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center backdrop-blur-sm p-4 print:hidden">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
               <h3 className="text-xl font-bold text-gray-900">Recipe: {activeRecipeMenuItem.name}</h3>
