@@ -816,6 +816,47 @@ export default function Manager() {
           </div>
         </div>
       )}
+
+      {/* ADD TABLE MODAL */}
+      {showAddTable && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+              <h3 className="text-xl font-bold text-gray-900">Add New Table</h3>
+              <button onClick={() => setShowAddTable(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+            </div>
+            <form onSubmit={handleAddTable} className="p-6">
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Table Number</label>
+                <input 
+                  type="number" 
+                  required 
+                  value={newTableNum} 
+                  onChange={(e) => setNewTableNum(e.target.value)}
+                  className="w-full border-gray-300 rounded-md shadow-sm p-2 border focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  placeholder="e.g. 5"
+                />
+              </div>
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Capacity (Seats)</label>
+                <input 
+                  type="number" 
+                  required 
+                  value={newTableCap} 
+                  onChange={(e) => setNewTableCap(e.target.value)}
+                  className="w-full border-gray-300 rounded-md shadow-sm p-2 border focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  placeholder="e.g. 4"
+                />
+              </div>
+              <div className="flex justify-end gap-3">
+                <button type="button" onClick={() => setShowAddTable(false)} className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-md font-medium hover:bg-gray-50">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700">Add Table</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* RECIPE MODAL */}
       {showRecipeModal && activeRecipeMenuItem && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center backdrop-blur-sm p-4">
