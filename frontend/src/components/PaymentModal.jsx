@@ -136,7 +136,7 @@ export default function PaymentModal({ order, onClose, onPaid, onCheckout }) {
               onClick={() => onCheckout(order.order_id, order.table_id)}
               className="flex-1 bg-green-600 text-white rounded-md font-medium hover:bg-green-700 py-2.5 shadow-sm"
             >
-              Print Invoice &amp; Close Table
+              Continue to Print
             </button>
           )}
         </div>

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { useSearchParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
+import { useToast } from '../context/ToastContext';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -65,6 +66,8 @@ export default function TableOrder() {
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
   const [billRequested, setBillRequested] = useState(false);
+  const toast = useToast();
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
 
   const sessionRef = useRef(null);
   const socketRef = useRef(null);
@@ -164,8 +167,16 @@ export default function TableOrder() {
     socketRef.current = socket;
     // The server derives the room from this token -- we never name it ourselves.
     socket.on('connect', () => socket.emit('join_session', session));
-    socket.on('session_updated', refreshState);
+    socket.on('session_updated', (data) => {
+      refreshState();
+      if (data?.reason === 'order_confirmed') {
+        toast.success("Your order was confirmed by staff!");
+      } else if (data?.reason === 'order_rejected') {
+        toast.error("Your order was rejected by staff.");
+      }
+    });
     socket.on('bill_paid', () => {
+      toast.success("Your bill was marked as paid! Thank you!");
       setState((prev) => (prev ? { ...prev, settled: true } : prev));
       setPhase((prev) => (prev === 'closed' ? prev : 'review'));
     });
@@ -229,14 +240,18 @@ export default function TableOrder() {
     } catch { /* a waiter is right there anyway -- not worth an error screen */ }
   };
 
-  const leaveSession = async () => {
-    if (!window.confirm('End your session at this table?')) return;
+  const confirmLeave = async () => {
+    setShowLeaveModal(false);
     try {
       await api.post('/api/public/session/leave', {}, {
         headers: { Authorization: `Bearer ${sessionRef.current}` },
       });
     } catch { /* closing locally regardless */ }
     endLocally('left');
+  };
+
+  const leaveSession = () => {
+    setShowLeaveModal(true);
   };
 
   const submitReview = async () => {
@@ -355,6 +370,21 @@ export default function TableOrder() {
 
   const orders = state?.orders || [];
 
+  // Determine the highest priority active status for the banner
+  let activeStatusBanner = null;
+  if (orders.length > 0) {
+    if (orders.some(o => o.status === 'Ready')) {
+      activeStatusBanner = { text: 'Your food is ready and will be served shortly! 🍽️', color: 'bg-green-500/20 text-green-400 border-green-500/30' };
+    } else if (orders.some(o => o.status === 'Cooking')) {
+      activeStatusBanner = { text: 'Your food is being cooked by our chefs! 🍳', color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' };
+    } else if (orders.some(o => o.status === 'Pending')) {
+      activeStatusBanner = { text: 'Your order was sent to the kitchen! 👨‍🍳', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' };
+    } else if (orders.some(o => o.status === 'Unconfirmed')) {
+      activeStatusBanner = { text: 'Waiting for staff to confirm your order... ⏳', color: 'bg-neutral-800 text-neutral-300 border-neutral-700' };
+    }
+  }
+
+
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-44 font-sans">
       <div className="bg-neutral-900/80 backdrop-blur-md border-b border-neutral-800 px-5 py-4 sticky top-0 z-10 shadow-sm">
@@ -389,6 +419,14 @@ export default function TableOrder() {
           </button>
         </div>
       </div>
+
+      {activeStatusBanner && (
+        <div className="px-4 pt-4">
+          <div className={`px-4 py-3 rounded-xl border text-sm font-bold shadow-sm ${activeStatusBanner.color} flex items-center justify-center text-center animate-pulse`}>
+            {activeStatusBanner.text}
+          </div>
+        </div>
+      )}
 
       {tab === 'menu' ? (
         <div className="p-4 space-y-4 no-scrollbar">
@@ -498,6 +536,39 @@ export default function TableOrder() {
         </div>
       )}
       
+      
+      {/* Leave Modal */}
+      {showLeaveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <h2 className="text-xl font-bold text-neutral-100 mb-2">Leave Session?</h2>
+            {state && state.due > 0 ? (
+              <p className="text-neutral-400 text-sm mb-6">
+                You still have an unpaid balance of <span className="text-amber-500 font-bold">{money(state.due)}</span>. Please make sure to settle your bill with the staff before you leave. Are you sure you want to end your device's session?
+              </p>
+            ) : (
+              <p className="text-neutral-400 text-sm mb-6">
+                Are you sure you want to end your session at this table?
+              </p>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowLeaveModal(false)}
+                className="flex-1 bg-neutral-800 text-neutral-300 font-bold py-3 rounded-xl hover:bg-neutral-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmLeave}
+                className="flex-1 bg-amber-500 text-neutral-950 font-bold py-3 rounded-xl hover:bg-amber-400 transition-colors shadow-[0_0_15px_rgba(245,158,11,0.2)]"
+              >
+                Yes, Leave
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    
       {/* Footer */}
       <div className="text-center text-xs text-neutral-600 font-medium py-8 pb-36">
         &copy; {new Date().getFullYear()} Mamar Bari POS &bull; Created by <a href="https://github.com/Zhovon" target="_blank" rel="noopener noreferrer" className="text-amber-600 hover:text-amber-500 transition-colors">Zhovon</a>

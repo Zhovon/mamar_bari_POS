@@ -81,13 +81,28 @@ export default function Manager() {
 
     const socket = io(API_URL);
     const refreshAll = () => { fetchDashboard(); fetchPending(); };
-    socket.on('new_order', refreshAll);
-    socket.on('order_status_updated', refreshAll);
-    socket.on('qr_order_pending', fetchPending);
-    socket.on('review_submitted', fetchReviews);
+    socket.on('new_order', (data) => {
+      refreshAll();
+      toast.info(`New order received!`);
+    });
+    socket.on('order_status_updated', (data) => {
+      refreshAll();
+      if (data?.status === 'Ready') {
+        toast.success(`Order is ready to serve!`);
+      }
+    });
+    socket.on('qr_order_pending', () => {
+      fetchPending();
+      toast.info('New QR order pending confirmation!');
+    });
+    socket.on('review_submitted', (data) => {
+      fetchReviews();
+      toast.success(`Table ${data.tableId} left a ${data.rating}-star review!`);
+    });
     // A guest tapped "Request bill" on their phone.
     socket.on('bill_requested', ({ tableNumber }) => {
       setBillRequests((prev) => (prev.includes(tableNumber) ? prev : [...prev, tableNumber]));
+      toast.info(`Table ${tableNumber} requested the bill!`);
     });
 
     return () => socket.disconnect();
@@ -190,22 +205,27 @@ export default function Manager() {
     try {
       const receiptRes = await axios.get(`${API_URL}/api/orders/${orderId}/receipt`);
       setReceiptData(receiptRes.data);
-
-      setTimeout(async () => {
-        window.print();
-        try {
-          await axios.put(`${API_URL}/api/orders/${orderId}/status`, { status: 'Completed' });
-          toast.success(`Table checked out successfully!`);
-          setReceiptData(null); 
-          setShowPaymentModal(false);
-          fetchDashboard();
-        } catch (err) {
-          console.error('Error completing order after print:', err);
-        }
-      }, 500);
+      setShowPaymentModal(false);
     } catch (error) {
       console.error('Error generating receipt:', error);
       toast.error('Failed to fetch receipt data.');
+    }
+  };
+
+  const handleManualPrint = () => {
+    window.print();
+  };
+
+  const finalizeTableClosure = async () => {
+    if (!receiptData) return;
+    try {
+      await axios.put(`${API_URL}/api/orders/${receiptData.id}/status`, { status: 'Completed' });
+      toast.success('Table closed successfully!');
+      setReceiptData(null);
+      fetchDashboard();
+    } catch (err) {
+      console.error('Error completing order:', err);
+      toast.error('Failed to close table');
     }
   };
 
@@ -759,6 +779,32 @@ export default function Manager() {
 
         </div>
       </div>
+
+      {/* Post-Payment Print Modal */}
+      {receiptData && (
+        <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center p-4 z-50 print:hidden">
+          <div className="bg-white w-full max-w-sm rounded-lg shadow-xl p-6 text-center">
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Payment Done!</h2>
+            <p className="text-gray-500 mb-6 text-sm">You can now print the invoice. Print it as many times as you need until it comes out perfectly.</p>
+            
+            <div className="flex flex-col gap-3">
+              <button 
+                onClick={handleManualPrint}
+                className="w-full bg-blue-100 text-blue-700 border border-blue-300 font-bold py-3 rounded-lg flex items-center justify-center gap-2 hover:bg-blue-200 transition-colors shadow-sm"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                Print Invoice
+              </button>
+              <button 
+                onClick={finalizeTableClosure}
+                className="w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition-colors shadow-sm mt-4"
+              >
+                ✅ Finish &amp; Close Table
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* PRINT RECEIPT SECTION (Visible only during print) */}
       {receiptData && (
