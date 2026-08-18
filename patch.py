@@ -1,275 +1,20 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import axios from 'axios';
-import { useSearchParams } from 'react-router-dom';
-import { io } from 'socket.io-client';
+import sys
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-
-// Bare instance so we DON'T inherit the staff JWT interceptor from App.jsx.
-const api = axios.create({ baseURL: API_URL });
-
-// The printed QR never expires, so the phone has to remember who it is between
-// scans: one stable device id, plus the live session token for this table.
-const DEVICE_KEY = 'mb_device_id';
-const sessionKey = (code) => `mb_session_${code}`;
-
-function getDeviceId() {
-  let id = localStorage.getItem(DEVICE_KEY);
-  if (!id) {
-    id = (crypto.randomUUID && crypto.randomUUID()) ||
-      `dev-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
-    localStorage.setItem(DEVICE_KEY, id);
-  }
-  return id;
-}
-
-const money = (n) => `৳${parseFloat(n || 0).toFixed(2)}`;
-
-const STATUS_LABEL = {
-  Unconfirmed: 'Waiting for staff',
-  Pending: 'Sent to kitchen',
-  Cooking: 'Being cooked',
-  Ready: 'Ready to serve',
-  Served: 'Served',
-  Paid: 'Paid',
-  Completed: 'Completed',
-};
-
-const STATUS_STYLE = {
-  Unconfirmed: 'bg-neutral-800 text-neutral-400',
-  Pending: 'bg-blue-900/40 text-blue-400',
-  Cooking: 'bg-amber-900/40 text-amber-400',
-  Ready: 'bg-yellow-900/40 text-yellow-400',
-  Served: 'bg-green-900/40 text-green-400',
-  Paid: 'bg-green-900/40 text-green-400',
-  Completed: 'bg-green-900/40 text-green-400',
-};
-
-export default function TableOrder() {
-  const [searchParams] = useSearchParams();
-  const code = searchParams.get('t');
-
-  // loading | invalid | active | review | closed
-  const [phase, setPhase] = useState('loading');
-  const [tab, setTab] = useState('menu'); // menu | orders
-  const [session, setSession] = useState(null);
-  const [tableNumber, setTableNumber] = useState(null);
-  const [state, setState] = useState(null); // orders + running bill
-  const [menu, setMenu] = useState([]);
-  const [cart, setCart] = useState([]);
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [error, setError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [closedReason, setClosedReason] = useState('review');
-  const [rating, setRating] = useState(0);
-  const [comment, setComment] = useState('');
-  const [billRequested, setBillRequested] = useState(false);
-
-  const sessionRef = useRef(null);
-  const socketRef = useRef(null);
-
-  // --- session lifecycle ----------------------------------------------------
-
-  const endLocally = useCallback((reason) => {
-    if (code) {
-      localStorage.removeItem(sessionKey(code));
-    }
-    sessionRef.current = null;
-    setSession(null);
-    setCart([]);
-    setClosedReason(reason);
-    setPhase('closed');
-  }, [code]);
-
-  const refreshState = useCallback(async () => {
-    const token = sessionRef.current;
-    if (!token) return;
-    try {
-      const { data } = await api.get('/api/public/session/state', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setState(data);
-      setTableNumber(data.table_number);
-      // The bill being settled is the cue to ask for a review.
-      if (data.settled && !data.already_reviewed) setPhase('review');
-    } catch (err) {
-      if (err.response?.status === 401) endLocally('ended');
-    }
-  }, [endLocally]);
-
-  const startSession = useCallback(async () => {
-    setPhase('loading');
-    setError('');
-    try {
-      const { data } = await api.post('/api/public/session', {
-        code,
-        device_id: getDeviceId(),
-      });
-      localStorage.setItem(sessionKey(code), data.session);
-      localStorage.removeItem(closedKey(code));
-      sessionRef.current = data.session;
-      setSession(data.session);
-      setTableNumber(data.table_number);
-      setPhase('active');
-      await refreshState();
-    } catch {
-      setPhase('invalid');
-    }
-  }, [code, refreshState]);
-
-  useEffect(() => {
-    if (!code) { setPhase('invalid'); return; }
-
-    (async () => {
-      try {
-        const { data } = await api.get('/api/public/menu');
-        setMenu(data);
-      } catch {
-        // A menu fetch failure shouldn't block an existing session's bill view.
-      }
-
-      // Resume an existing session so a refresh or a lost signal doesn't split
-      // one visit across several half-sessions.
-      const saved = localStorage.getItem(sessionKey(code));
-      if (saved) {
-        sessionRef.current = saved;
-        setSession(saved);
-        setPhase('active');
-        try {
-          const { data } = await api.get('/api/public/session/state', {
-            headers: { Authorization: `Bearer ${saved}` },
-          });
-          setState(data);
-          setTableNumber(data.table_number);
-          if (data.settled && !data.already_reviewed) setPhase('review');
-          return;
-        } catch {
-          localStorage.removeItem(sessionKey(code));
-          sessionRef.current = null;
-        }
-      }
-
-      await startSession();
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code]);
-
-  // --- live updates ---------------------------------------------------------
-
-  useEffect(() => {
-    if (!session) return;
-
-    const socket = io(API_URL);
-    socketRef.current = socket;
-    // The server derives the room from this token -- we never name it ourselves.
-    socket.on('connect', () => socket.emit('join_session', session));
-    socket.on('session_updated', refreshState);
-    socket.on('bill_paid', () => {
-      setState((prev) => (prev ? { ...prev, settled: true } : prev));
-      setPhase((prev) => (prev === 'closed' ? prev : 'review'));
-    });
-    socket.on('session_closed', () => endLocally('ended'));
-
-    // Phones drop sockets constantly (lock screen, tab switch, patchy wifi), so
-    // poll as a safety net -- the review prompt must not depend on one event.
-    const poll = setInterval(refreshState, 20000);
-
-    return () => {
-      clearInterval(poll);
-      socket.disconnect();
-      socketRef.current = null;
-    };
-  }, [session, refreshState, endLocally]);
-
-  // --- actions --------------------------------------------------------------
-
-  const addToCart = (item) => setCart((prev) => {
-    const found = prev.find((i) => i.id === item.id);
-    if (found) return prev.map((i) => (i.id === item.id ? { ...i, qty: i.qty + 1 } : i));
-    return [...prev, { ...item, qty: 1 }];
-  });
-
-  const changeQty = (id, delta) => setCart((prev) =>
-    prev.map((i) => (i.id === id ? { ...i, qty: i.qty + delta } : i)).filter((i) => i.qty > 0)
-  );
-
-  const cartTotal = cart.reduce((s, i) => s + parseFloat(i.price) * i.qty, 0);
-
-  const placeOrder = async () => {
-    setSubmitting(true);
-    setError('');
-    try {
-      await api.post('/api/public/orders', {
-        name,
-        phone,
-        items: cart.map((i) => ({ menu_item_id: i.id, quantity: i.qty })),
-      }, { headers: { Authorization: `Bearer ${sessionRef.current}` } });
-      setCart([]);
-      setTab('orders');
-      await refreshState();
-    } catch (err) {
-      if (err.response?.data?.code === 'SESSION_ENDED') {
-        endLocally('ended');
-      } else {
-        setError(err.response?.data?.error || 'Could not place order. Please try again.');
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const requestBill = async () => {
-    try {
-      await api.post('/api/public/session/request-bill', {}, {
-        headers: { Authorization: `Bearer ${sessionRef.current}` },
-      });
-      setBillRequested(true);
-      setTimeout(() => setBillRequested(false), 30000);
-    } catch { /* a waiter is right there anyway -- not worth an error screen */ }
-  };
-
-  const leaveSession = async () => {
-    if (!window.confirm('End your session at this table?')) return;
-    try {
-      await api.post('/api/public/session/leave', {}, {
-        headers: { Authorization: `Bearer ${sessionRef.current}` },
-      });
-    } catch { /* closing locally regardless */ }
-    endLocally('left');
-  };
-
-  const submitReview = async () => {
-    if (!rating) { setError('Please tap a star first'); return; }
-    setSubmitting(true);
-    setError('');
-    try {
-      await api.post('/api/public/reviews', { rating, comment }, {
-        headers: { Authorization: `Bearer ${sessionRef.current}` },
-      });
-      endLocally('reviewed');
-    } catch (err) {
-      // The session ending underneath us is exactly what a review does -- treat
-      // it as success rather than showing the guest a scary error.
-      if (err.response?.status === 401) endLocally('reviewed');
-      else setError(err.response?.data?.error || 'Could not send your review.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const skipReview = async () => {
-    try {
-      await api.post('/api/public/reviews/skip', {}, {
-        headers: { Authorization: `Bearer ${sessionRef.current}` },
-      });
-    } catch { /* closing locally regardless */ }
-    endLocally('skipped');
-  };
-
-  // --- screens --------------------------------------------------------------
-
-  if (phase === 'loading') {
+def main():
+    with open('frontend/src/views/TableOrder.jsx', 'r') as f:
+        lines = f.readlines()
+        
+    start_idx = -1
+    for i, line in enumerate(lines):
+        if line.strip() == "if (phase === 'loading') {":
+            start_idx = i
+            break
+            
+    if start_idx == -1:
+        print("Could not find start point")
+        return
+        
+    new_content = """  if (phase === 'loading') {
     return <div className="min-h-screen bg-neutral-950 flex items-center justify-center text-amber-500 font-medium">Loading menu…</div>;
   }
 
@@ -505,3 +250,11 @@ export default function TableOrder() {
     </div>
   );
 }
+"""
+    
+    with open('frontend/src/views/TableOrder.jsx', 'w') as f:
+        f.writelines(lines[:start_idx])
+        f.write(new_content)
+
+if __name__ == '__main__':
+    main()
