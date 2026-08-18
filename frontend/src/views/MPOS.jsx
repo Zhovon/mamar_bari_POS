@@ -149,7 +149,8 @@ export default function MPOS() {
   const readyOrdersCount = activeOrders.filter(o => o.status === 'Ready').length;
 
   return (
-    <div className="flex flex-col lg:flex-row h-screen overflow-hidden bg-gray-50">
+    <>
+      <div className="flex flex-col lg:flex-row h-screen overflow-hidden bg-gray-50 print:hidden">
       
       {/* Left: Menu Grid */}
       <div className="flex-1 p-4 lg:p-6 overflow-y-auto">
@@ -279,7 +280,7 @@ export default function MPOS() {
 
       {/* Orders Modal */}
       {showOrdersModal && (
-        <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center p-4 z-50 print:hidden">
           <div className="bg-white w-full max-w-2xl rounded-lg shadow-xl flex flex-col max-h-[80vh]">
             <div className="p-5 border-b border-gray-200 flex justify-between items-center">
               <h2 className="text-lg font-bold text-gray-900">Active Orders</h2>
@@ -357,6 +358,7 @@ export default function MPOS() {
           onCheckout={handleCheckout}
         />
       )}
+      </div>
 
       {/* PRINT RECEIPT SECTION (Visible only during print) */}
       {receiptData && (
@@ -413,6 +415,6 @@ export default function MPOS() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
