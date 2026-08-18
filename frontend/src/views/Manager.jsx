@@ -316,7 +316,7 @@ export default function Manager() {
   const handleAddTable = async (e) => {
     e.preventDefault();
     try {
-      await axios.post(`${API_URL}/api/tables`, {
+      const res = await axios.post(`${API_URL}/api/tables`, {
         table_number: parseInt(newTableNum),
         capacity: parseInt(newTableCap)
       });
@@ -324,6 +324,10 @@ export default function Manager() {
       setNewTableNum('');
       setNewTableCap(4);
       fetchDashboard();
+      
+      if (res.data && res.data.id) {
+        generateTableQR(res.data.id);
+      }
     } catch (error) {
       toast.error(`Failed to add table: ${error.response?.data?.error || error.message}`);
     }
