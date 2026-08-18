@@ -30,7 +30,7 @@ function generateTableCode() {
 function looksLikeTableCode(value) {
   return typeof value === 'string'
     && value.length === CODE_LENGTH
-    && /^[0-9A-HJKMNP-TV-Z]+$/.test(value);
+    && /^[0-9A-HJKMNP-TV-Z]+$/i.test(value);
 }
 
 // --- Legacy table QR token --------------------------------------------------

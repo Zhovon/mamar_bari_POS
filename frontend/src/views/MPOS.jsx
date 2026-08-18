@@ -27,11 +27,23 @@ export default function MPOS() {
     fetchData();
 
     const socket = io(API_URL);
-    socket.on('new_order', fetchData);
-    socket.on('order_status_updated', fetchData);
+    socket.on('new_order', (data) => {
+      fetchData();
+      toast.info(`New order received!`);
+    });
+    socket.on('order_status_updated', (data) => {
+      fetchData();
+      if (data?.status === 'Ready') {
+        toast.success(`Order is ready to serve!`);
+      }
+    });
     // A guest tapped "Request bill" on their phone.
     socket.on('bill_requested', ({ tableNumber }) => {
       setBillRequests((prev) => (prev.includes(tableNumber) ? prev : [...prev, tableNumber]));
+      toast.info(`Table ${tableNumber} requested the bill!`);
+    });
+    socket.on('review_submitted', (data) => {
+      toast.success(`Table ${data.tableId} left a ${data.rating}-star review!`);
     });
 
     return () => socket.disconnect();
@@ -119,23 +131,27 @@ export default function MPOS() {
     try {
       const receiptRes = await axios.get(`${API_URL}/api/orders/${orderId}/receipt`);
       setReceiptData(receiptRes.data);
-
-      setTimeout(async () => {
-        window.print();
-        try {
-          await axios.put(`${API_URL}/api/orders/${orderId}/status`, { status: 'Completed' });
-          toast.success('Table closed successfully!');
-          setReceiptData(null);
-          setPayingOrder(null);
-          fetchData();
-        } catch (err) {
-          console.error('Error completing order after print:', err);
-          toast.error('Failed to close table');
-        }
-      }, 500);
+      setPayingOrder(null);
     } catch (error) {
       console.error('Error generating receipt:', error);
       toast.error('Failed to fetch receipt data.');
+    }
+  };
+
+  const handleManualPrint = () => {
+    window.print();
+  };
+
+  const finalizeTableClosure = async () => {
+    if (!receiptData) return;
+    try {
+      await axios.put(`${API_URL}/api/orders/${receiptData.id}/status`, { status: 'Completed' });
+      toast.success('Table closed successfully!');
+      setReceiptData(null);
+      fetchData();
+    } catch (err) {
+      console.error('Error completing order:', err);
+      toast.error('Failed to close table');
     }
   };
 
@@ -348,8 +364,7 @@ export default function MPOS() {
         </div>
       )}
 
-      {/* Payment at the table -- same modal and endpoint the desk uses, so
-          settling the bill here also prompts the guest's phone for a review. */}
+      {/* Payment at the table */}
       {payingOrder && (
         <PaymentModal
           order={payingOrder}
@@ -357,6 +372,32 @@ export default function MPOS() {
           onPaid={fetchData}
           onCheckout={handleCheckout}
         />
+      )}
+      
+      {/* Post-Payment Print Modal */}
+      {receiptData && (
+        <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center p-4 z-50 print:hidden">
+          <div className="bg-white w-full max-w-sm rounded-lg shadow-xl p-6 text-center">
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Payment Done!</h2>
+            <p className="text-gray-500 mb-6 text-sm">You can now print the invoice. Print it as many times as you need until it comes out perfectly.</p>
+            
+            <div className="flex flex-col gap-3">
+              <button 
+                onClick={handleManualPrint}
+                className="w-full bg-blue-100 text-blue-700 border border-blue-300 font-bold py-3 rounded-lg flex items-center justify-center gap-2 hover:bg-blue-200 transition-colors shadow-sm"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                Print Invoice
+              </button>
+              <button 
+                onClick={finalizeTableClosure}
+                className="w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition-colors shadow-sm mt-4"
+              >
+                ✅ Finish &amp; Close Table
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       </div>
 

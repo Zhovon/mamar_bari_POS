@@ -2,18 +2,21 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from '../context/ToastContext';
 
 export default function KDS() {
   const [orders, setOrders] = useState([]);
   const navigate = useNavigate();
+  const toast = useToast();
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
   useEffect(() => {
     fetchQueue();
 
     const socket = io(API_URL);
-    socket.on('new_order', () => {
+    socket.on('new_order', (data) => {
       fetchQueue();
+      toast.info(`New order received for Table ${data?.tableId || '...'}`);
     });
     socket.on('order_status_updated', () => {
       fetchQueue();
