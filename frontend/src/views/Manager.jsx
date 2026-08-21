@@ -491,12 +491,12 @@ export default function Manager() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {tables.map((table) => (
-                  <div key={table.table_id} className={`bg-white rounded-lg border shadow-sm flex flex-col overflow-hidden ${table.order_id ? 'border-t-4 border-t-blue-500 border-gray-200' : 'border-t-4 border-t-gray-300 border-gray-200'}`}>
+                  <div key={table.table_id} className={`bg-white rounded-lg border shadow-sm flex flex-col overflow-hidden ${table.table_status === 'Occupied' ? 'border-t-4 border-t-blue-500 border-gray-200' : 'border-t-4 border-t-gray-300 border-gray-200'}`}>
                     <div className="p-5 flex-1">
                       <div className="flex justify-between items-start mb-4">
                         <h2 className="text-xl font-bold text-gray-900">Table {table.table_number}</h2>
-                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${table.order_id ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
-                          {table.order_id ? 'Occupied' : 'Available'}
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${table.table_status === 'Occupied' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
+                          {table.table_status === 'Occupied' ? 'Occupied' : 'Available'}
                         </span>
                       </div>
                       
