@@ -633,15 +633,37 @@ async function requireActiveSession(req, res, next) {
   }
 }
 
-// Release one phone from the session. The shared session stays open for
-// everyone else; only staff checkout closes that.
+// Once the last live phone leaves a session -- typically right after paying and
+// answering the review prompt -- the session itself is done. Close it so a paid
+// visit never lingers as "open" (the table was already freed at payment time).
+async function closeSessionIfEmpty(sessionId, runner = db) {
+  if (!sessionId) return;
+  const { rows } = await runner.query(
+    "SELECT COUNT(*)::int AS n FROM session_devices WHERE session_id = $1 AND status = 'active'",
+    [sessionId]
+  );
+  if (rows[0].n === 0) {
+    await runner.query(
+      "UPDATE table_sessions SET status = 'closed', closed_at = NOW(), closed_reason = 'completed' WHERE id = $1 AND status = 'open'",
+      [sessionId]
+    );
+    io.to(`session:${sessionId}`).emit('session_closed', { reason: 'completed' });
+  }
+}
+
+// Release one phone from the session. The shared session stays open while other
+// phones are still active; when this was the last one, the session closes too.
 async function closeDevice(deviceRowId, reason, runner = db) {
-  await runner.query(
+  const { rows } = await runner.query(
     `UPDATE session_devices
      SET status = 'closed', closed_at = NOW(), closed_reason = $2
-     WHERE id = $1 AND status = 'active'`,
+     WHERE id = $1 AND status = 'active'
+     RETURNING session_id`,
     [deviceRowId, reason]
   );
+  if (rows.length > 0) {
+    await closeSessionIfEmpty(rows[0].session_id, runner);
+  }
 }
 
 // P1. Scan a table QR -> join (or open) that table's shared session.
@@ -1142,17 +1164,40 @@ app.post('/api/orders/:id/payments', authenticateToken, async (req, res) => {
     const orderTotal = parseFloat(orderRows[0].total || 0);
     
     let isFullyPaid = false;
+    let tableFreed = false;
     if (totalPaid >= orderTotal) {
       // Auto-update order to Paid if fully covered
       await client.query("UPDATE orders SET status = 'Paid' WHERE id = $1 AND status != 'Completed'", [id]);
       isFullyPaid = true;
+
+      // If nothing else is still running on this table, the visit is settled:
+      // free the table so the waiter POS and manager floor agree it is open
+      // again. Only when the LAST active order is paid -- a table with several
+      // orders must not free while others are still cooking/served. The QR
+      // session stays open just long enough for the review prompt, then closes
+      // itself when the guest's phone leaves (closeSessionIfEmpty).
+      const { rows: outstanding } = await client.query(
+        "SELECT COUNT(*)::int AS n FROM orders WHERE table_id = $1 AND status IN ('Pending','Cooking','Ready','Served')",
+        [orderRows[0].table_id]
+      );
+      if (outstanding[0].n === 0) {
+        await client.query(
+          "UPDATE restaurant_tables SET status = 'Available', session_version = session_version + 1 WHERE id = $1",
+          [orderRows[0].table_id]
+        );
+        tableFreed = true;
+      }
     }
-    
+
     await client.query('COMMIT');
 
     // Notify clients of status change if it became fully paid
     if (isFullyPaid) {
       io.emit('order_status_updated', { id, status: 'Paid', table_id: orderRows[0].table_id });
+    }
+    // Refresh both floor views the instant a paid table frees up.
+    if (tableFreed) {
+      io.emit('table_cleared', { tableId: orderRows[0].table_id });
     }
 
     // Recomputed against the WHOLE table bill, not just this order: with several
