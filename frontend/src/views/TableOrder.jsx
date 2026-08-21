@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useSearchParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { useToast } from '../context/ToastContext';
+import { groupMenuByCategory, categoryNames } from '../utils/menu';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -57,6 +58,7 @@ export default function TableOrder() {
   const [tableNumber, setTableNumber] = useState(null);
   const [state, setState] = useState(null); // orders + running bill
   const [menu, setMenu] = useState([]);
+  const [activeCat, setActiveCat] = useState('All');
   const [cart, setCart] = useState([]);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -429,20 +431,44 @@ export default function TableOrder() {
       )}
 
       {tab === 'menu' ? (
-        <div className="p-4 space-y-4 no-scrollbar">
-          {menu.map((item) => (
-            <div key={item.id} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-3 flex items-center gap-4 shadow-lg hover:border-neutral-700 transition-colors">
-              <img src={item.image_url} alt="" className="h-20 w-20 rounded-xl object-cover bg-neutral-800 flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <div className="text-[10px] text-amber-500 uppercase tracking-widest font-bold mb-1">{item.category}</div>
-                <div className="text-base font-bold text-neutral-100 leading-tight mb-1">{item.name}</div>
-                <div className="text-neutral-400 font-medium text-sm">{money(item.price)}</div>
-              </div>
-              <button onClick={() => addToCart(item)} className="bg-neutral-800 text-amber-500 border border-neutral-700 text-sm font-bold w-10 h-10 rounded-full flex items-center justify-center hover:bg-neutral-700 active:scale-90 transition-all flex-shrink-0 shadow-sm">
-                +
+        <div className="no-scrollbar">
+          {/* Category chips (Foodpanda-style): sticky, horizontally scrollable */}
+          <div className="sticky top-0 z-10 bg-neutral-950/95 backdrop-blur border-b border-neutral-800 px-4 py-3 flex gap-2 overflow-x-auto no-scrollbar">
+            {['All', ...categoryNames(menu)].map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setActiveCat(cat)}
+                className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${activeCat === cat ? 'bg-amber-500 text-neutral-950 shadow-[0_0_10px_rgba(245,158,11,0.3)]' : 'bg-neutral-900 text-neutral-400 border border-neutral-800 hover:text-neutral-200'}`}
+              >
+                {cat}
               </button>
-            </div>
-          ))}
+            ))}
+          </div>
+
+          <div className="p-4 space-y-6">
+            {groupMenuByCategory(menu)
+              .filter((section) => activeCat === 'All' || section.category === activeCat)
+              .map((section) => (
+                <div key={section.category} className="space-y-3">
+                  <h2 className="text-sm font-bold text-amber-500 uppercase tracking-widest">{section.category}</h2>
+                  {section.items.map((item) => (
+                    <div key={item.id} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-3 flex items-center gap-4 shadow-lg hover:border-neutral-700 transition-colors">
+                      <img src={item.image_url} alt="" className="h-20 w-20 rounded-xl object-cover bg-neutral-800 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-base font-bold text-neutral-100 leading-tight mb-1">{item.name}</div>
+                        <div className="text-neutral-400 font-medium text-sm">{money(item.price)}</div>
+                      </div>
+                      <button onClick={() => addToCart(item)} className="bg-neutral-800 text-amber-500 border border-neutral-700 text-sm font-bold w-10 h-10 rounded-full flex items-center justify-center hover:bg-neutral-700 active:scale-90 transition-all flex-shrink-0 shadow-sm">
+                        +
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            {menu.length === 0 && (
+              <div className="text-center py-16 text-neutral-500 text-sm font-medium">No items on the menu yet.</div>
+            )}
+          </div>
         </div>
       ) : (
         <div className="p-4 space-y-4 no-scrollbar">

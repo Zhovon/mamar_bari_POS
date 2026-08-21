@@ -122,9 +122,35 @@ app.post('/api/login', async (req, res) => {
 });
 
 // 2. Menu Routes (Protected)
+// Resolve a menu item's category from either a category_id (preferred) or a
+// raw name (find-or-create, so the manager form can add a category inline).
+// Returns { id, name } or null when nothing usable was supplied.
+async function resolveCategory({ category_id, category }, runner = db) {
+  if (category_id) {
+    const { rows } = await runner.query('SELECT id, name FROM menu_categories WHERE id = $1', [category_id]);
+    return rows[0] || null;
+  }
+  if (category && category.trim()) {
+    const { rows } = await runner.query(
+      `INSERT INTO menu_categories (name, sort_order)
+       VALUES ($1, COALESCE((SELECT MAX(sort_order) FROM menu_categories), 0) + 10)
+       ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+       RETURNING id, name`,
+      [category.trim()]
+    );
+    return rows[0] || null;
+  }
+  return null;
+}
+
 app.get('/api/menu', authenticateToken, async (req, res) => {
   try {
-    const { rows } = await db.query('SELECT * FROM menu_items ORDER BY category, name');
+    const { rows } = await db.query(
+      `SELECT m.*, COALESCE(c.sort_order, 999999) AS category_sort
+       FROM menu_items m
+       LEFT JOIN menu_categories c ON c.id = m.category_id
+       ORDER BY category_sort, m.category, m.name`
+    );
     res.json(rows);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -132,11 +158,13 @@ app.get('/api/menu', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/menu', authenticateToken, requireAdminOrManager, async (req, res) => {
-  const { name, category, price, image_url } = req.body;
+  const { name, price, image_url } = req.body;
   try {
+    const cat = await resolveCategory(req.body);
+    if (!cat) return res.status(400).json({ error: 'A valid category is required' });
     const { rows } = await db.query(
-      'INSERT INTO menu_items (name, category, price, image_url) VALUES ($1, $2, $3, $4) RETURNING *',
-      [name, category, price, image_url]
+      'INSERT INTO menu_items (name, category, category_id, price, image_url) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [name, cat.name, cat.id, price, image_url]
     );
     res.json({ success: true, item: rows[0] });
   } catch (error) {
@@ -146,11 +174,13 @@ app.post('/api/menu', authenticateToken, requireAdminOrManager, async (req, res)
 
 app.put('/api/menu/:id', authenticateToken, requireAdminOrManager, async (req, res) => {
   const { id } = req.params;
-  const { name, category, price, image_url, is_available } = req.body;
+  const { name, price, image_url, is_available } = req.body;
   try {
+    const cat = await resolveCategory(req.body);
+    if (!cat) return res.status(400).json({ error: 'A valid category is required' });
     const { rows } = await db.query(
-      'UPDATE menu_items SET name=$1, category=$2, price=$3, image_url=$4, is_available=$5 WHERE id=$6 RETURNING *',
-      [name, category, price, image_url, is_available, id]
+      'UPDATE menu_items SET name=$1, category=$2, category_id=$3, price=$4, image_url=$5, is_available=$6 WHERE id=$7 RETURNING *',
+      [name, cat.name, cat.id, price, image_url, is_available, id]
     );
     res.json({ success: true, item: rows[0] });
   } catch (error) {
@@ -162,6 +192,77 @@ app.delete('/api/menu/:id', authenticateToken, requireAdminOrManager, async (req
   const { id } = req.params;
   try {
     await db.query('DELETE FROM menu_items WHERE id=$1', [id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ---- Menu categories (managed by Admin/Manager) --------------------------
+app.get('/api/categories', authenticateToken, async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT * FROM menu_categories ORDER BY sort_order, name');
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/categories', authenticateToken, requireAdminOrManager, async (req, res) => {
+  const name = (req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Category name is required' });
+  try {
+    const { rows } = await db.query(
+      `INSERT INTO menu_categories (name, sort_order)
+       VALUES ($1, COALESCE((SELECT MAX(sort_order) FROM menu_categories), 0) + 10)
+       RETURNING *`,
+      [name]
+    );
+    res.json({ success: true, category: rows[0] });
+  } catch (error) {
+    if (error.code === '23505') return res.status(409).json({ error: 'That category already exists' });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/categories/:id', authenticateToken, requireAdminOrManager, async (req, res) => {
+  const { id } = req.params;
+  const { name, sort_order, is_active } = req.body;
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `UPDATE menu_categories
+       SET name = COALESCE($2, name),
+           sort_order = COALESCE($3, sort_order),
+           is_active = COALESCE($4, is_active)
+       WHERE id = $1 RETURNING *`,
+      [id, name ? name.trim() : null, sort_order ?? null, typeof is_active === 'boolean' ? is_active : null]
+    );
+    if (rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Category not found' }); }
+    // Keep the denormalised name on items in sync when a category is renamed.
+    if (name && name.trim()) {
+      await client.query('UPDATE menu_items SET category = $2 WHERE category_id = $1', [id, name.trim()]);
+    }
+    await client.query('COMMIT');
+    res.json({ success: true, category: rows[0] });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    if (error.code === '23505') return res.status(409).json({ error: 'That category already exists' });
+    res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/categories/:id', authenticateToken, requireAdminOrManager, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await db.query('SELECT COUNT(*)::int AS n FROM menu_items WHERE category_id = $1', [id]);
+    if (rows[0].n > 0) {
+      return res.status(409).json({ error: `Cannot delete: ${rows[0].n} item(s) still use this category. Reassign or move them first.` });
+    }
+    await db.query('DELETE FROM menu_categories WHERE id = $1', [id]);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -732,7 +833,12 @@ app.post('/api/public/reviews/skip', requireActiveSession, async (req, res) => {
 app.get('/api/public/menu', async (req, res) => {
   try {
     const { rows } = await db.query(
-      'SELECT id, name, category, price, image_url FROM menu_items WHERE is_available = TRUE ORDER BY category, name'
+      `SELECT m.id, m.name, m.category, m.category_id, m.price, m.image_url,
+              COALESCE(c.sort_order, 999999) AS category_sort
+       FROM menu_items m
+       LEFT JOIN menu_categories c ON c.id = m.category_id
+       WHERE m.is_available = TRUE AND (c.is_active IS DISTINCT FROM FALSE)
+       ORDER BY category_sort, m.category, m.name`
     );
     res.json(rows);
   } catch (error) {
