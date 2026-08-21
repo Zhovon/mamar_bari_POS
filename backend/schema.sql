@@ -71,15 +71,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS session_devices_session_device_key
   ON session_devices (session_id, device_id);
 
 -- 4. Menu Items Table
+-- Restaurant-editable menu categories (Kichuri, Chowmein, Chinese, ...).
+-- sort_order drives section order on the waiter POS and customer QR menus.
+CREATE TABLE IF NOT EXISTS menu_categories (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name VARCHAR(50) NOT NULL UNIQUE,
+  sort_order INT NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS menu_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name VARCHAR(100) NOT NULL,
-  category VARCHAR(50) NOT NULL CHECK (category IN ('Grill', 'Curry', 'Biryani', 'Bread', 'Beverage', 'Dessert')),
+  category VARCHAR(50) NOT NULL, -- denormalised display name, synced from category_id
+  category_id UUID REFERENCES menu_categories(id),
   price DECIMAL(10,2) NOT NULL,
   image_url TEXT,
   is_available BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS menu_items_category_id_idx ON menu_items (category_id);
 
 -- 5. Orders Table
 CREATE TABLE IF NOT EXISTS orders (

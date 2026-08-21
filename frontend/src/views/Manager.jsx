@@ -49,7 +49,11 @@ export default function Manager() {
 
   // Menu form state
   const [editingItem, setEditingItem] = useState(null);
-  const [menuForm, setMenuForm] = useState({ name: '', category: 'Grill', price: '', image_url: '', is_available: true });
+  const [menuForm, setMenuForm] = useState({ name: '', category_id: '', price: '', image_url: '', is_available: true });
+
+  // Menu categories (managed): add / rename / reorder / hide
+  const [categories, setCategories] = useState([]);
+  const [newCategory, setNewCategory] = useState('');
 
   // Add table state
   const [showAddTable, setShowAddTable] = useState(false);
@@ -75,6 +79,7 @@ export default function Manager() {
   useEffect(() => {
     fetchDashboard();
     fetchMenu();
+    fetchCategories();
     fetchPending();
     fetchIngredients();
     fetchReviews();
@@ -243,9 +248,81 @@ export default function Manager() {
     }
   };
 
+  // Menu Category Logic
+  const fetchCategories = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/api/categories`);
+      setCategories(res.data);
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+    }
+  };
+
+  const handleAddCategory = async () => {
+    const name = newCategory.trim();
+    if (!name) return;
+    try {
+      const { data } = await axios.post(`${API_URL}/api/categories`, { name });
+      setNewCategory('');
+      await fetchCategories();
+      setMenuForm((f) => ({ ...f, category_id: data.category.id }));
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Could not add category');
+    }
+  };
+
+  const handleRenameCategory = async (cat) => {
+    const name = window.prompt('Rename category', cat.name);
+    if (!name || name.trim() === cat.name) return;
+    try {
+      await axios.put(`${API_URL}/api/categories/${cat.id}`, { name: name.trim() });
+      fetchCategories();
+      fetchMenu();
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Could not rename category');
+    }
+  };
+
+  const handleMoveCategory = async (cat, dir) => {
+    const ordered = [...categories];
+    const i = ordered.findIndex((c) => c.id === cat.id);
+    const j = i + dir;
+    if (j < 0 || j >= ordered.length) return;
+    try {
+      // Swap sort_order values of the two neighbours.
+      await Promise.all([
+        axios.put(`${API_URL}/api/categories/${ordered[i].id}`, { sort_order: ordered[j].sort_order }),
+        axios.put(`${API_URL}/api/categories/${ordered[j].id}`, { sort_order: ordered[i].sort_order }),
+      ]);
+      fetchCategories();
+    } catch (error) {
+      toast.error('Could not reorder categories');
+    }
+  };
+
+  const handleToggleCategory = async (cat) => {
+    try {
+      await axios.put(`${API_URL}/api/categories/${cat.id}`, { is_active: !cat.is_active });
+      fetchCategories();
+    } catch (error) {
+      toast.error('Could not update category');
+    }
+  };
+
+  const handleDeleteCategory = async (cat) => {
+    if (!window.confirm(`Delete category "${cat.name}"?`)) return;
+    try {
+      await axios.delete(`${API_URL}/api/categories/${cat.id}`);
+      fetchCategories();
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Could not delete category');
+    }
+  };
+
   // Menu Management Logic
   const handleSaveMenu = async (e) => {
     e.preventDefault();
+    if (!menuForm.category_id) { toast.error('Please choose a category'); return; }
     try {
       if (editingItem) {
         await axios.put(`${API_URL}/api/menu/${editingItem.id}`, menuForm);
@@ -253,10 +330,11 @@ export default function Manager() {
         await axios.post(`${API_URL}/api/menu`, menuForm);
       }
       setEditingItem(null);
-      setMenuForm({ name: '', category: 'Grill', price: '', image_url: '', is_available: true });
+      setMenuForm({ name: '', category_id: '', price: '', image_url: '', is_available: true });
       fetchMenu();
     } catch (error) {
       console.error('Error saving menu item:', error);
+      toast.error(error.response?.data?.error || 'Could not save item');
     }
   };
 
@@ -602,8 +680,9 @@ export default function Manager() {
           {/* TAB: MENU MANAGEMENT */}
           {activeTab === 'menu' && (
             <div className="flex flex-col lg:flex-row gap-8 items-start">
-              {/* Form */}
-              <div className="w-full lg:w-1/3 bg-white p-6 rounded-lg shadow-sm border border-gray-200 lg:sticky top-6">
+              {/* Left column: item form + category manager */}
+              <div className="w-full lg:w-1/3 space-y-6 lg:sticky top-6">
+              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
                 <h2 className="text-xl font-bold text-gray-900 mb-6">{editingItem ? 'Edit Menu Item' : 'Add New Item'}</h2>
                 <form onSubmit={handleSaveMenu} className="space-y-4">
                   <div>
@@ -612,9 +691,14 @@ export default function Manager() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                    <select value={menuForm.category} onChange={e => setMenuForm({...menuForm, category: e.target.value})} className="w-full border-gray-300 rounded-md shadow-sm p-2 border focus:border-blue-500 focus:ring-blue-500">
-                      {['Grill', 'Curry', 'Biryani', 'Bread', 'Beverage', 'Dessert'].map(c => <option key={c} value={c}>{c}</option>)}
+                    <select value={menuForm.category_id} onChange={e => setMenuForm({...menuForm, category_id: e.target.value})} className="w-full border-gray-300 rounded-md shadow-sm p-2 border focus:border-blue-500 focus:ring-blue-500">
+                      <option value="" disabled>-- Choose category --</option>
+                      {categories.map(c => <option key={c.id} value={c.id}>{c.name}{c.is_active ? '' : ' (hidden)'}</option>)}
                     </select>
+                    <div className="flex gap-2 mt-2">
+                      <input type="text" value={newCategory} onChange={e => setNewCategory(e.target.value)} placeholder="New category (e.g. Chowmein)" className="flex-1 border-gray-300 rounded-md shadow-sm p-2 border text-sm focus:border-blue-500 focus:ring-blue-500" />
+                      <button type="button" onClick={handleAddCategory} className="bg-gray-800 text-white px-3 rounded-md text-sm font-medium hover:bg-gray-900 shadow-sm">Add</button>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Price (৳)</label>
@@ -631,10 +715,36 @@ export default function Manager() {
                   <div className="pt-4 flex gap-3">
                     <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded-md font-medium hover:bg-blue-700 shadow-sm">{editingItem ? 'Save Changes' : 'Create Item'}</button>
                     {editingItem && (
-                      <button type="button" onClick={() => { setEditingItem(null); setMenuForm({ name: '', category: 'Grill', price: '', image_url: '', is_available: true }); }} className="flex-1 bg-white border border-gray-300 text-gray-700 py-2 rounded-md font-medium hover:bg-gray-50 shadow-sm">Cancel</button>
+                      <button type="button" onClick={() => { setEditingItem(null); setMenuForm({ name: '', category_id: '', price: '', image_url: '', is_available: true }); }} className="flex-1 bg-white border border-gray-300 text-gray-700 py-2 rounded-md font-medium hover:bg-gray-50 shadow-sm">Cancel</button>
                     )}
                   </div>
                 </form>
+              </div>
+
+              {/* Category manager: reorder / rename / hide / delete sections */}
+              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                <h2 className="text-lg font-bold text-gray-900 mb-1">Menu Categories</h2>
+                <p className="text-xs text-gray-500 mb-4">Order here sets the section order on the POS and customer QR menu.</p>
+                <div className="space-y-2">
+                  {categories.length === 0 && (
+                    <div className="text-sm text-gray-400">No categories yet. Add one from the item form above.</div>
+                  )}
+                  {categories.map((cat, i) => (
+                    <div key={cat.id} className={`flex items-center gap-2 p-2 rounded-md border ${cat.is_active ? 'border-gray-200 bg-gray-50' : 'border-gray-200 bg-gray-100 opacity-60'}`}>
+                      <div className="flex flex-col leading-none">
+                        <button type="button" disabled={i === 0} onClick={() => handleMoveCategory(cat, -1)} className="text-gray-400 hover:text-gray-700 disabled:opacity-30 text-xs">▲</button>
+                        <button type="button" disabled={i === categories.length - 1} onClick={() => handleMoveCategory(cat, 1)} className="text-gray-400 hover:text-gray-700 disabled:opacity-30 text-xs">▼</button>
+                      </div>
+                      <span className="flex-1 text-sm font-medium text-gray-900 truncate">
+                        {cat.name}{!cat.is_active && <span className="ml-2 text-xs text-gray-400">(hidden)</span>}
+                      </span>
+                      <button type="button" onClick={() => handleRenameCategory(cat)} className="text-xs text-blue-600 hover:underline">Rename</button>
+                      <button type="button" onClick={() => handleToggleCategory(cat)} className="text-xs text-gray-600 hover:underline">{cat.is_active ? 'Hide' : 'Show'}</button>
+                      <button type="button" onClick={() => handleDeleteCategory(cat)} className="text-xs text-red-600 hover:underline">Delete</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
               </div>
 
               {/* Data Table */}

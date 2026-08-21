@@ -4,9 +4,11 @@ import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import PaymentModal from '../components/PaymentModal';
 import { useToast } from '../context/ToastContext';
+import { groupMenuByCategory, categoryNames } from '../utils/menu';
 
 export default function MPOS() {
   const [menuItems, setMenuItems] = useState([]);
+  const [activeCat, setActiveCat] = useState('All');
   const [tables, setTables] = useState([]);
   const [activeOrders, setActiveOrders] = useState([]);
   const [selectedTable, setSelectedTable] = useState(null);
@@ -206,27 +208,51 @@ export default function MPOS() {
           </select>
         </div>
         
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          {menuItems.map((item) => (
-            <div 
-              key={item.id} 
-              onClick={() => addToCart(item)}
-              className="bg-white border border-gray-200 rounded-lg overflow-hidden cursor-pointer hover:border-blue-400 hover:shadow-md transition-all group shadow-sm"
+        {/* Category filter chips */}
+        <div className="flex gap-2 overflow-x-auto pb-1 mb-5">
+          {['All', ...categoryNames(menuItems)].map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setActiveCat(cat)}
+              className={`px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all ${activeCat === cat ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-300 hover:border-blue-400'}`}
             >
-              <div className="h-32 w-full overflow-hidden bg-gray-100 border-b border-gray-100">
-                <img 
-                  src={item.image_url} 
-                  alt={item.name} 
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                />
-              </div>
-              <div className="p-4">
-                <div className="text-xs text-gray-500 mb-1 uppercase tracking-wider font-semibold">{item.category}</div>
-                <h3 className="text-sm font-bold text-gray-900 leading-tight mb-2">{item.name}</h3>
-                <div className="text-blue-600 font-bold">৳{parseFloat(item.price).toFixed(2)}</div>
-              </div>
-            </div>
+              {cat}
+            </button>
           ))}
+        </div>
+
+        <div className="space-y-8">
+          {groupMenuByCategory(menuItems)
+            .filter((section) => activeCat === 'All' || section.category === activeCat)
+            .map((section) => (
+              <div key={section.category}>
+                <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3">{section.category}</h2>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                  {section.items.map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => addToCart(item)}
+                      className="bg-white border border-gray-200 rounded-lg overflow-hidden cursor-pointer hover:border-blue-400 hover:shadow-md transition-all group shadow-sm"
+                    >
+                      <div className="h-32 w-full overflow-hidden bg-gray-100 border-b border-gray-100">
+                        <img
+                          src={item.image_url}
+                          alt={item.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                      </div>
+                      <div className="p-4">
+                        <h3 className="text-sm font-bold text-gray-900 leading-tight mb-2">{item.name}</h3>
+                        <div className="text-blue-600 font-bold">৳{parseFloat(item.price).toFixed(2)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          {menuItems.length === 0 && (
+            <div className="text-center py-16 text-gray-400 text-sm font-medium">No menu items available.</div>
+          )}
         </div>
       </div>
 
