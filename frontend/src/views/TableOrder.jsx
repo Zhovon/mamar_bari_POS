@@ -10,6 +10,12 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 // Bare instance so we DON'T inherit the staff JWT interceptor from App.jsx.
 const api = axios.create({ baseURL: API_URL });
 
+// The backend sleeps on the free tier, so the day's first scan may hit a cold
+// server. Retry a transient failure a few times (rising delays) before giving
+// up -- a slow wake-up must never look like a bad QR code.
+const SESSION_RETRIES = 4;
+const SESSION_RETRY_DELAYS = [1500, 3000, 5000, 8000];
+
 // The printed QR never expires, so the phone has to remember who it is between
 // scans: one stable device id, plus the live session token for this table.
 const DEVICE_KEY = 'mb_device_id';
@@ -112,8 +118,8 @@ export default function TableOrder() {
     }
   }, [endLocally]);
 
-  const startSession = useCallback(async () => {
-    setPhase('loading');
+  const startSession = useCallback(async (attempt = 0) => {
+    setPhase(attempt === 0 ? 'loading' : 'connecting');
     setError('');
     try {
       const { data } = await api.post('/api/public/session', {
@@ -127,8 +133,23 @@ export default function TableOrder() {
       setTableNumber(data.table_number);
       setPhase('active');
       await refreshState();
-    } catch {
-      setPhase('invalid');
+    } catch (err) {
+      // Only a genuine bad/blank code (400/401) should dead-end on the "invalid"
+      // screen. Everything else -- no response, a 5xx, or the free-tier backend
+      // waking from sleep on the day's first scan -- is transient: retry a few
+      // times, then offer a friendly "try again" instead of scaring the guest.
+      const status = err.response?.status;
+      if (status === 400 || status === 401) {
+        setPhase('invalid');
+        return;
+      }
+      if (attempt < SESSION_RETRIES) {
+        setPhase('connecting');
+        const wait = SESSION_RETRY_DELAYS[attempt] ?? 5000;
+        setTimeout(() => startSession(attempt + 1), wait);
+        return;
+      }
+      setPhase('offline');
     }
   }, [code, refreshState]);
 
@@ -153,9 +174,15 @@ export default function TableOrder() {
           setTableNumber(data.table_number);
           if (data.settled && !data.already_reviewed) setPhase('review');
           return;
-        } catch {
-          localStorage.removeItem(sessionKey(code));
-          sessionRef.current = null;
+        } catch (err) {
+          // Only drop the saved session if the server actually rejected it
+          // (401 = ended/revoked). A transient failure (cold start, flaky wifi)
+          // must not throw away a still-valid token -- fall through to
+          // startSession, which resumes the same session for this device.
+          if (err.response?.status === 401) {
+            localStorage.removeItem(sessionKey(code));
+            sessionRef.current = null;
+          }
         }
       }
 
@@ -294,6 +321,32 @@ export default function TableOrder() {
 
   if (phase === 'loading') {
     return <div className="min-h-screen bg-neutral-950 flex items-center justify-center text-amber-500 font-medium">Loading menu…</div>;
+  }
+
+  if (phase === 'connecting') {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center bg-neutral-950">
+        <div className="h-8 w-8 rounded-full border-2 border-neutral-700 border-t-amber-500 animate-spin mb-4" />
+        <h1 className="text-lg font-bold text-neutral-100 mb-1">Connecting…</h1>
+        <p className="text-neutral-400 text-sm max-w-xs">Reaching the restaurant. This can take a few seconds on the first scan.</p>
+      </div>
+    );
+  }
+
+  if (phase === 'offline') {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center bg-neutral-950">
+        <div className="text-4xl mb-3">📶</div>
+        <h1 className="text-xl font-bold text-neutral-100 mb-1">Couldn’t reach the restaurant</h1>
+        <p className="text-neutral-400 text-sm max-w-xs mb-6">Your table code is fine — the connection just dropped. Please check your signal and try again.</p>
+        <button
+          onClick={() => startSession(0)}
+          className="bg-amber-500 text-neutral-950 font-bold px-6 py-2.5 rounded-full active:scale-95 transition-transform"
+        >
+          Try again
+        </button>
+      </div>
+    );
   }
 
   if (phase === 'invalid') {
