@@ -166,6 +166,7 @@ app.post('/api/menu', authenticateToken, requireAdminOrManager, async (req, res)
       'INSERT INTO menu_items (name, category, category_id, price, image_url) VALUES ($1, $2, $3, $4, $5) RETURNING *',
       [name, cat.name, cat.id, price, image_url]
     );
+    io.emit('menu_updated'); // tell open customer phones + POS to re-fetch
     res.json({ success: true, item: rows[0] });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -182,6 +183,7 @@ app.put('/api/menu/:id', authenticateToken, requireAdminOrManager, async (req, r
       'UPDATE menu_items SET name=$1, category=$2, category_id=$3, price=$4, image_url=$5, is_available=$6 WHERE id=$7 RETURNING *',
       [name, cat.name, cat.id, price, image_url, is_available, id]
     );
+    io.emit('menu_updated');
     res.json({ success: true, item: rows[0] });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -192,6 +194,7 @@ app.delete('/api/menu/:id', authenticateToken, requireAdminOrManager, async (req
   const { id } = req.params;
   try {
     await db.query('DELETE FROM menu_items WHERE id=$1', [id]);
+    io.emit('menu_updated');
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -218,6 +221,7 @@ app.post('/api/categories', authenticateToken, requireAdminOrManager, async (req
        RETURNING *`,
       [name]
     );
+    io.emit('menu_updated');
     res.json({ success: true, category: rows[0] });
   } catch (error) {
     if (error.code === '23505') return res.status(409).json({ error: 'That category already exists' });
@@ -245,6 +249,7 @@ app.put('/api/categories/:id', authenticateToken, requireAdminOrManager, async (
       await client.query('UPDATE menu_items SET category = $2 WHERE category_id = $1', [id, name.trim()]);
     }
     await client.query('COMMIT');
+    io.emit('menu_updated');
     res.json({ success: true, category: rows[0] });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -263,6 +268,7 @@ app.delete('/api/categories/:id', authenticateToken, requireAdminOrManager, asyn
       return res.status(409).json({ error: `Cannot delete: ${rows[0].n} item(s) still use this category. Reassign or move them first.` });
     }
     await db.query('DELETE FROM menu_categories WHERE id = $1', [id]);
+    io.emit('menu_updated');
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });

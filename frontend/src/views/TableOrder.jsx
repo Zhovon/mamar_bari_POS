@@ -87,6 +87,15 @@ export default function TableOrder() {
     setPhase('closed');
   }, [code]);
 
+  const fetchMenu = useCallback(async () => {
+    try {
+      const { data } = await api.get('/api/public/menu');
+      setMenu(data);
+    } catch {
+      // A menu fetch failure shouldn't block an existing session's bill view.
+    }
+  }, []);
+
   const refreshState = useCallback(async () => {
     const token = sessionRef.current;
     if (!token) return;
@@ -127,12 +136,7 @@ export default function TableOrder() {
     if (!code) { setPhase('invalid'); return; }
 
     (async () => {
-      try {
-        const { data } = await api.get('/api/public/menu');
-        setMenu(data);
-      } catch {
-        // A menu fetch failure shouldn't block an existing session's bill view.
-      }
+      await fetchMenu();
 
       // Resume an existing session so a refresh or a lost signal doesn't split
       // one visit across several half-sessions.
@@ -183,6 +187,8 @@ export default function TableOrder() {
       setPhase((prev) => (prev === 'closed' ? prev : 'review'));
     });
     socket.on('session_closed', () => endLocally('ended'));
+    // Manager edited the menu/categories from the dashboard -- pull the fresh list.
+    socket.on('menu_updated', fetchMenu);
 
     // Phones drop sockets constantly (lock screen, tab switch, patchy wifi), so
     // poll as a safety net -- the review prompt must not depend on one event.
@@ -193,7 +199,7 @@ export default function TableOrder() {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [session, refreshState, endLocally]);
+  }, [session, refreshState, endLocally, fetchMenu]);
 
   // --- actions --------------------------------------------------------------
 
