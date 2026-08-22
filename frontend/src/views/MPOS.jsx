@@ -410,6 +410,8 @@ export default function MPOS() {
                           order_id: order.order_id,
                           table_id: order.table_id,
                           table_number: order.table_number,
+                          order_type: order.order_type,
+                          guest_name: order.guest_name,
                           total: order.total,
                           order_status: order.status,
                         })}
