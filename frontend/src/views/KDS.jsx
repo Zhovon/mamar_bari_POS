@@ -87,7 +87,7 @@ export default function KDS() {
                 
                 {/* Header */}
                 <div className={`${headerColor} p-4 flex justify-between items-center`}>
-                  <div className="font-bold text-xl">Table {order.table_number}</div>
+                  <div className="font-bold text-xl">{order.order_type === 'takeout' ? (order.guest_name ? `Takeout — ${order.guest_name}` : 'Takeout') : `Table ${order.table_number}`}</div>
                   <div className="text-sm font-semibold">{minutesWaiting} min ago</div>
                 </div>
 
