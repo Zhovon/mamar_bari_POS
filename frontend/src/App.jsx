@@ -8,6 +8,7 @@ import KDS from './views/KDS';
 import Manager from './views/Manager';
 import Admin from './views/Admin';
 import TableOrder from './views/TableOrder';
+import TakeoutOrder from './views/TakeoutOrder';
 import { ToastProvider } from './context/ToastContext';
 
 // Axios Interceptor for JWT
@@ -41,6 +42,7 @@ function App() {
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<Login />} />
           <Route path="/order" element={<TableOrder />} />
+          <Route path="/takeout" element={<TakeoutOrder />} />
           <Route path="/mpos" element={<MPOS />} />
           <Route path="/kds" element={<KDS />} />
           <Route path="/manager" element={<Manager />} />

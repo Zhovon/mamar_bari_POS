@@ -23,6 +23,7 @@ export default function Manager() {
   const [receiptData, setReceiptData] = useState(null);
   const [pendingOrders, setPendingOrders] = useState([]);
   const [qrCodes, setQrCodes] = useState({}); // table_id -> { dataUrl, url, table_number }
+  const [takeoutQr, setTakeoutQr] = useState(null); // { dataUrl, url } for the single parcel-order QR
   const [ingredients, setIngredients] = useState([]);
   
   // Inventory form state
@@ -162,6 +163,34 @@ export default function Manager() {
     } catch (error) {
       toast.error(`Failed to reset code: ${error.response?.data?.error || error.message}`);
     }
+  };
+
+  // The take-out QR is a single, tokenless link to the parcel-order page. It's
+  // derived from the dashboard's own origin, so opening this on the live site
+  // yields the live URL (same guardrail as the table codes below).
+  const generateTakeoutQR = async () => {
+    try {
+      const url = `${window.location.origin}/takeout`;
+      const dataUrl = await QRCode.toDataURL(url, { width: 320, margin: 2 });
+      setTakeoutQr({ dataUrl, url });
+    } catch (error) {
+      toast.error(`Failed to generate QR: ${error.message}`);
+    }
+  };
+
+  const printTakeoutQR = (code) => {
+    const w = window.open('', '_blank');
+    w.document.write(`
+      <html><head><title>Take-out QR</title></head>
+      <body style="text-align:center;font-family:sans-serif;padding:40px;">
+        <h1 style="margin-bottom:4px;">Mamar Bari</h1>
+        <h2 style="margin-top:0;">Take-out / Parcel</h2>
+        <p style="color:#555;">Scan to order for pickup &amp; pay at the counter</p>
+        <img src="${code.dataUrl}" style="width:320px;height:320px;" />
+      </body></html>`);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 300);
   };
 
   const printTableQR = (code) => {
@@ -548,7 +577,7 @@ export default function Manager() {
                   <div key={order.order_id} className="bg-white rounded-lg border border-yellow-200 border-t-4 border-t-yellow-400 shadow-sm p-5">
                     <div className="flex justify-between items-start mb-3">
                       <div>
-                        <div className="text-lg font-bold text-gray-900">Table {order.table_number}</div>
+                        <div className="text-lg font-bold text-gray-900">{order.order_type === 'takeout' ? 'Takeout' : `Table ${order.table_number}`}</div>
                         <div className="text-xs text-gray-500">
                           {order.guest_name ? `${order.guest_name} · ` : ''}{new Date(order.created_at).toLocaleTimeString()}
                         </div>
@@ -585,6 +614,48 @@ export default function Manager() {
                 <strong>Check the link under each code before printing a batch.</strong> It must be your live
                 site address — anything else means reprinting every sticker.
               </p>
+              {/* One shared take-out QR (no table). Sits by the counter/entrance. */}
+              <div className="bg-amber-50 rounded-lg border border-amber-200 shadow-sm p-5 flex flex-col sm:flex-row items-center gap-5 mb-6">
+                <div className="flex-shrink-0 flex flex-col items-center">
+                  {takeoutQr ? (
+                    <img src={takeoutQr.dataUrl} alt="Take-out QR" className="w-40 h-40" />
+                  ) : (
+                    <div className="w-40 h-40 flex items-center justify-center bg-white border border-dashed border-amber-300 rounded-md text-gray-400 text-sm text-center px-2">Take-out QR</div>
+                  )}
+                </div>
+                <div className="flex-1 w-full">
+                  <h3 className="text-lg font-bold text-gray-900 mb-1">🛍️ Take-out / Parcel QR</h3>
+                  <p className="text-sm text-gray-600 mb-3">
+                    One shared code for parcel orders — no table. Place it at the counter or entrance. Guests order,
+                    then collect and pay at the counter.
+                  </p>
+                  {takeoutQr && (
+                    <div className="mb-3">
+                      <div className="text-[10px] uppercase tracking-wide font-semibold text-gray-400 mb-0.5">Scans to</div>
+                      <div className="text-[11px] text-gray-600 break-all leading-snug">{takeoutQr.url}</div>
+                      {/localhost|127\.0\.0\.1/.test(takeoutQr.url) && (
+                        <div className="mt-2 text-[11px] font-medium text-red-700 bg-red-50 border border-red-200 rounded-md p-2">
+                          This link points at a development address and will not work on a customer&apos;s phone.
+                          Open this dashboard on your live site before printing.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={generateTakeoutQR} className="bg-white border border-gray-300 text-gray-700 text-sm font-medium py-2 px-4 rounded-md hover:bg-gray-50">{takeoutQr ? 'Show again' : 'Show QR'}</button>
+                    {takeoutQr && (
+                      <button
+                        onClick={() => printTakeoutQR(takeoutQr)}
+                        disabled={/localhost|127\.0\.0\.1/.test(takeoutQr.url)}
+                        className="bg-blue-600 text-white text-sm font-medium py-2 px-4 rounded-md hover:bg-blue-700 shadow-sm disabled:bg-gray-300 disabled:cursor-not-allowed"
+                      >
+                        Print
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {tables.map((table) => {
                   const code = qrCodes[table.table_id];
@@ -929,7 +1000,7 @@ export default function Manager() {
           <div className="mb-4 border-b border-black pb-2 text-xs">
             <div>Date: {new Date(receiptData.created_at).toLocaleString()}</div>
             <div>Order ID: {receiptData.id.split('-')[0]}...</div>
-            <div>Table: {receiptData.table_number}</div>
+            <div>{receiptData.order_type === 'takeout' ? `Takeout${receiptData.guest_name ? ` — ${receiptData.guest_name}` : ''}` : `Table: ${receiptData.table_number}`}</div>
             <div>Waiter: {receiptData.waiter_name || 'System'}</div>
           </div>
 

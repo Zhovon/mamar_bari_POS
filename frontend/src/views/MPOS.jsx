@@ -12,6 +12,9 @@ export default function MPOS() {
   const [tables, setTables] = useState([]);
   const [activeOrders, setActiveOrders] = useState([]);
   const [selectedTable, setSelectedTable] = useState(null);
+  // 'dine_in' rings up against a table; 'takeout' is a parcel order with no table.
+  const [orderMode, setOrderMode] = useState('dine_in');
+  const [guestName, setGuestName] = useState('');
   const [cart, setCart] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showOrdersModal, setShowOrdersModal] = useState(false);
@@ -68,8 +71,11 @@ export default function MPOS() {
     }
   };
 
+  const isTakeout = orderMode === 'takeout';
+  const canOrder = isTakeout || !!selectedTable;
+
   const addToCart = (item) => {
-    if (!selectedTable) {
+    if (!canOrder) {
       toast.error("Please select a table first!");
       return;
     }
@@ -99,20 +105,23 @@ export default function MPOS() {
   const cartTotal = cart.reduce((sum, item) => sum + (parseFloat(item.price) * item.qty), 0);
 
   const sendOrder = async () => {
-    if (cart.length === 0 || !selectedTable) return;
+    if (cart.length === 0 || !canOrder) return;
     try {
       const payload = {
-        table_id: selectedTable,
+        table_id: isTakeout ? null : selectedTable,
+        order_type: isTakeout ? 'takeout' : 'dine_in',
+        guest_name: isTakeout ? (guestName.trim() || null) : null,
         subtotal: cartTotal,
         discount: 0,
         total: cartTotal,
         items: cart.map(i => ({ menu_item_id: i.id, quantity: i.qty, notes: "" }))
       };
-      
+
       await axios.post(`${API_URL}/api/orders`, payload);
-      toast.success("Order Sent to Kitchen!");
+      toast.success(isTakeout ? "Take-out order sent to kitchen!" : "Order Sent to Kitchen!");
       setCart([]);
       setSelectedTable(null);
+      setGuestName('');
       fetchData();
     } catch (error) {
       console.error('Error sending order:', error);
@@ -194,18 +203,46 @@ export default function MPOS() {
             <button onClick={handleLogout} className="text-sm font-medium text-red-600 hover:text-red-800 px-3 py-2">Logout</button>
           </div>
           
-          <select 
-            className="w-full sm:w-auto bg-white text-gray-900 font-medium py-2 px-4 rounded-md border border-gray-300 outline-none focus:border-blue-500 shadow-sm"
-            value={selectedTable || ""}
-            onChange={e => setSelectedTable(e.target.value)}
-          >
-            <option value="" disabled>Select Table...</option>
-            {tables.map(t => (
-              <option key={t.id} value={t.id}>
-                Table {t.table_number} ({t.status})
-              </option>
-            ))}
-          </select>
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            {/* Dine-in vs Take-out mode */}
+            <div className="inline-flex rounded-md border border-gray-300 overflow-hidden shadow-sm">
+              <button
+                onClick={() => setOrderMode('dine_in')}
+                className={`px-4 py-2 text-sm font-semibold transition-colors ${!isTakeout ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+              >
+                Dine In
+              </button>
+              <button
+                onClick={() => { setOrderMode('takeout'); setSelectedTable(null); }}
+                className={`px-4 py-2 text-sm font-semibold transition-colors border-l border-gray-300 ${isTakeout ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+              >
+                Take Out
+              </button>
+            </div>
+
+            {isTakeout ? (
+              <input
+                type="text"
+                value={guestName}
+                onChange={e => setGuestName(e.target.value)}
+                placeholder="Guest name (optional)"
+                className="w-full sm:w-56 bg-white text-gray-900 font-medium py-2 px-4 rounded-md border border-gray-300 outline-none focus:border-blue-500 shadow-sm"
+              />
+            ) : (
+              <select
+                className="w-full sm:w-auto bg-white text-gray-900 font-medium py-2 px-4 rounded-md border border-gray-300 outline-none focus:border-blue-500 shadow-sm"
+                value={selectedTable || ""}
+                onChange={e => setSelectedTable(e.target.value)}
+              >
+                <option value="" disabled>Select Table...</option>
+                {tables.map(t => (
+                  <option key={t.id} value={t.id}>
+                    Table {t.table_number} ({t.status})
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         </div>
         
         {/* Category filter chips */}
@@ -261,7 +298,9 @@ export default function MPOS() {
         <div className="p-5 border-b border-gray-200 bg-gray-50">
           <h2 className="text-lg font-bold text-gray-900">Current Order</h2>
           <p className="text-sm text-gray-500 font-medium">
-            {selectedTable ? `Table ${tables.find(t => t.id === selectedTable)?.table_number}` : 'No table selected'}
+            {isTakeout
+              ? `Take Out${guestName.trim() ? ` — ${guestName.trim()}` : ''}`
+              : (selectedTable ? `Table ${tables.find(t => t.id === selectedTable)?.table_number}` : 'No table selected')}
           </p>
         </div>
         
@@ -310,10 +349,10 @@ export default function MPOS() {
             <span>Total:</span>
             <span>৳{cartTotal.toFixed(2)}</span>
           </div>
-          <button 
+          <button
             onClick={sendOrder}
-            disabled={cart.length === 0 || !selectedTable}
-            className={`w-full py-3 rounded-md font-medium text-white transition-colors ${cart.length === 0 || !selectedTable ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-sm'}`}
+            disabled={cart.length === 0 || !canOrder}
+            className={`w-full py-3 rounded-md font-medium text-white transition-colors ${cart.length === 0 || !canOrder ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-sm'}`}
           >
             Send to Kitchen
           </button>
@@ -336,7 +375,7 @@ export default function MPOS() {
                 activeOrders.map(order => (
                   <div key={order.order_id} className={`p-4 rounded-md flex justify-between items-center border ${order.status === 'Ready' ? 'border-yellow-200 bg-yellow-50' : 'border-gray-200 bg-white'}`}>
                     <div className="flex-1">
-                      <div className="text-base font-bold text-gray-900 mb-0.5">Table {order.table_number}</div>
+                      <div className="text-base font-bold text-gray-900 mb-0.5">{order.order_type === 'takeout' ? (order.guest_name ? `Takeout — ${order.guest_name}` : 'Takeout') : `Table ${order.table_number}`}</div>
                       <div className="text-xs text-gray-500 mb-2">
                         Order #{order.order_id.split('-')[0]} · ৳{parseFloat(order.total || 0).toFixed(2)}
                       </div>
@@ -439,7 +478,7 @@ export default function MPOS() {
           <div className="mb-4 border-b border-black pb-2 text-xs">
             <div>Date: {new Date(receiptData.created_at).toLocaleString()}</div>
             <div>Order ID: {receiptData.id.split('-')[0]}...</div>
-            <div>Table: {receiptData.table_number}</div>
+            <div>{receiptData.order_type === 'takeout' ? `Takeout${receiptData.guest_name ? ` — ${receiptData.guest_name}` : ''}` : `Table: ${receiptData.table_number}`}</div>
             <div>Waiter: {receiptData.waiter_name || 'System'}</div>
           </div>
 

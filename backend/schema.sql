@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS orders (
   customer_id UUID REFERENCES customers(id) NULL,
   status VARCHAR(20) NOT NULL DEFAULT 'Pending' CHECK (status IN ('Unconfirmed', 'Pending', 'Cooking', 'Ready', 'Served', 'Paid', 'Completed', 'Cancelled')),
   source VARCHAR(20) NOT NULL DEFAULT 'staff' CHECK (source IN ('staff', 'qr')),
+  order_type VARCHAR(20) NOT NULL DEFAULT 'dine_in' CHECK (order_type IN ('dine_in', 'takeout')),
   guest_name VARCHAR(100),
   subtotal DECIMAL(10,2) NOT NULL DEFAULT 0,
   discount DECIMAL(10,2) NOT NULL DEFAULT 0,

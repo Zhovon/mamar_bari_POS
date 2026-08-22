@@ -969,16 +969,120 @@ app.post('/api/public/orders', publicOrderLimiter, requireActiveSession, async (
   }
 });
 
+// P3b. Public take-out (parcel) order. No table, no session -- reached from the
+// single take-out QR/link. Lands as 'Unconfirmed' in the same staff queue as QR
+// dine-in orders; the guest pays at the counter.
+app.post('/api/public/takeout', publicOrderLimiter, async (req, res) => {
+  const { items, name, phone } = req.body;
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Please enter your name for the order' });
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'Your order is empty' });
+  }
+  if (items.length > 40) {
+    return res.status(400).json({ error: 'That is too many items for one order' });
+  }
+
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+
+    // Server-side pricing: never trust prices from the client.
+    const ids = items.map((i) => i.menu_item_id);
+    const { rows: priced } = await client.query(
+      'SELECT id, price FROM menu_items WHERE id = ANY($1) AND is_available = TRUE',
+      [ids]
+    );
+    const priceById = Object.fromEntries(priced.map((r) => [r.id, parseFloat(r.price)]));
+
+    let subtotal = 0;
+    const lines = [];
+    for (const i of items) {
+      const price = priceById[i.menu_item_id];
+      const qty = parseInt(i.quantity, 10);
+      if (price === undefined || !Number.isFinite(qty) || qty < 1 || qty > 50) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'One or more items are unavailable' });
+      }
+      subtotal += price * qty;
+      lines.push({ menu_item_id: i.menu_item_id, quantity: qty, notes: (i.notes || '').slice(0, 200) });
+    }
+
+    // Optional CRM link: upsert the customer if a phone was given.
+    let customerId = null;
+    if (phone && phone.trim()) {
+      const { rows: cust } = await client.query(
+        `INSERT INTO customers (phone_number, full_name)
+         VALUES ($1, $2)
+         ON CONFLICT (phone_number) DO UPDATE
+           SET full_name = COALESCE(EXCLUDED.full_name, customers.full_name),
+               visit_count = customers.visit_count + 1,
+               last_visit = NOW()
+         RETURNING id`,
+        [phone.trim(), name.trim()]
+      );
+      customerId = cust[0].id;
+    }
+
+    const { rows: orderRows } = await client.query(
+      `INSERT INTO orders (table_id, customer_id, guest_name, subtotal, discount, total, status, source, order_type)
+       VALUES (NULL, $1, $2, $3, 0, $3, 'Unconfirmed', 'qr', 'takeout') RETURNING id`,
+      [customerId, name.trim().slice(0, 100), subtotal]
+    );
+    const orderId = orderRows[0].id;
+
+    for (const l of lines) {
+      await client.query(
+        'INSERT INTO order_items (order_id, menu_item_id, quantity, notes, status) VALUES ($1, $2, $3, $4, $5)',
+        [orderId, l.menu_item_id, l.quantity, l.notes, 'Pending']
+      );
+    }
+    await client.query('COMMIT');
+
+    io.emit('qr_order_pending', { orderId, tableId: null });
+    res.json({ success: true, order_id: orderId, total: subtotal });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// P3c. Public: track a take-out order's progress (no auth -- id is the ticket).
+app.get('/api/public/takeout/:id/status', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await db.query(
+      `SELECT o.id, o.status, o.total, o.guest_name, o.created_at,
+              COALESCE(json_agg(json_build_object('name', m.name, 'quantity', oi.quantity))
+                       FILTER (WHERE m.name IS NOT NULL), '[]') as items
+       FROM orders o
+       LEFT JOIN order_items oi ON o.id = oi.order_id
+       LEFT JOIN menu_items m ON oi.menu_item_id = m.id
+       WHERE o.id = $1 AND o.order_type = 'takeout'
+       GROUP BY o.id`,
+      [id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+    res.json(rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // P4. Staff: list QR orders awaiting confirmation.
 app.get('/api/orders/pending-confirmation', authenticateToken, async (req, res) => {
   try {
     const query = `
       SELECT
-        o.id as order_id, o.total, o.guest_name, o.created_at,
-        t.table_number,
+        o.id as order_id, o.total, o.guest_name, o.created_at, o.order_type,
+        COALESCE(t.table_number::text, 'Takeout') as table_number,
         json_agg(json_build_object('name', m.name, 'quantity', oi.quantity, 'notes', oi.notes)) as items
       FROM orders o
-      JOIN restaurant_tables t ON o.table_id = t.id
+      LEFT JOIN restaurant_tables t ON o.table_id = t.id
       JOIN order_items oi ON o.id = oi.order_id
       JOIN menu_items m ON oi.menu_item_id = m.id
       WHERE o.status = 'Unconfirmed' AND o.source = 'qr'
@@ -1054,14 +1158,21 @@ app.post('/api/orders/:id/reject', authenticateToken, async (req, res) => {
 
 // 4. Create Order (Protected)
 app.post('/api/orders', authenticateToken, async (req, res) => {
-  const { table_id, customer_id, items, subtotal, discount, total } = req.body;
+  const { table_id, customer_id, items, subtotal, discount, total, order_type, guest_name } = req.body;
   const waiter_id = req.user.id; // Get from JWT
+  // A take-out order belongs to no table: ignore any table_id the client sent and
+  // never mark a table occupied for it.
+  const isTakeout = order_type === 'takeout';
+  const tableId = isTakeout ? null : table_id;
+  if (!isTakeout && !tableId) {
+    return res.status(400).json({ error: 'Select a table or choose Take Out' });
+  }
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
     const orderRes = await client.query(
-      'INSERT INTO orders (table_id, waiter_id, customer_id, subtotal, discount, total, status) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-      [table_id, waiter_id, customer_id, subtotal, discount, total, 'Pending']
+      'INSERT INTO orders (table_id, waiter_id, customer_id, subtotal, discount, total, status, order_type, guest_name) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
+      [tableId, waiter_id, customer_id, subtotal, discount, total, 'Pending', isTakeout ? 'takeout' : 'dine_in', isTakeout ? (guest_name || null) : null]
     );
     const order = orderRes.rows[0];
 
@@ -1071,14 +1182,16 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
         [order.id, item.menu_item_id, item.quantity, item.notes, 'Pending']
       );
     }
-    await client.query("UPDATE restaurant_tables SET status = 'Occupied' WHERE id = $1", [table_id]);
-    
+    if (!isTakeout) {
+      await client.query("UPDATE restaurant_tables SET status = 'Occupied' WHERE id = $1", [tableId]);
+    }
+
     // Phase 6.1: Deduct inventory
     await deductInventoryForOrder(order.id, client);
 
     await client.query('COMMIT');
     
-    io.emit('new_order', { orderId: order.id, tableId: table_id });
+    io.emit('new_order', { orderId: order.id, tableId });
     res.json({ success: true, order });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -1225,10 +1338,11 @@ app.get('/api/kitchen/queue', authenticateToken, async (req, res) => {
   try {
     const query = `
       SELECT 
-        o.id as order_id, t.table_number, o.status as order_status, o.created_at,
+        o.id as order_id, COALESCE(t.table_number::text, 'Takeout') as table_number,
+        o.order_type, o.guest_name, o.status as order_status, o.created_at,
         json_agg(json_build_object('item_id', oi.id, 'name', m.name, 'category', m.category, 'quantity', oi.quantity, 'notes', oi.notes, 'status', oi.status)) as items
       FROM orders o
-      JOIN restaurant_tables t ON o.table_id = t.id
+      LEFT JOIN restaurant_tables t ON o.table_id = t.id
       JOIN order_items oi ON o.id = oi.order_id
       JOIN menu_items m ON oi.menu_item_id = m.id
       WHERE o.status IN ('Pending', 'Cooking')
@@ -1246,10 +1360,11 @@ app.get('/api/kitchen/queue', authenticateToken, async (req, res) => {
 app.get('/api/waiter/orders', authenticateToken, async (req, res) => {
   try {
     const query = `
-      SELECT o.id as order_id, o.table_id, t.table_number, o.status, o.total, o.created_at,
+      SELECT o.id as order_id, o.table_id, COALESCE(t.table_number::text, 'Takeout') as table_number,
+             o.order_type, o.guest_name, o.status, o.total, o.created_at,
              COALESCE(json_agg(json_build_object('name', m.name, 'quantity', oi.quantity)) FILTER (WHERE m.name IS NOT NULL), '[]') as items
       FROM orders o
-      JOIN restaurant_tables t ON o.table_id = t.id
+      LEFT JOIN restaurant_tables t ON o.table_id = t.id
       LEFT JOIN order_items oi ON o.id = oi.order_id
       LEFT JOIN menu_items m ON oi.menu_item_id = m.id
       -- 'Served' is included so a waiter can take payment at the table.
@@ -1293,9 +1408,9 @@ app.get('/api/orders/:id/receipt', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
     const orderQuery = `
-      SELECT o.*, t.table_number, u.full_name as waiter_name 
-      FROM orders o 
-      JOIN restaurant_tables t ON o.table_id = t.id 
+      SELECT o.*, COALESCE(t.table_number::text, 'Takeout') as table_number, u.full_name as waiter_name
+      FROM orders o
+      LEFT JOIN restaurant_tables t ON o.table_id = t.id
       LEFT JOIN users u ON o.waiter_id = u.id
       WHERE o.id = $1
     `;
